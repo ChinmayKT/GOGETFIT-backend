@@ -24,6 +24,7 @@
     "migrate:fitness-profile": "node migration/scripts/backfill-fitness-profile.js",
     "migrate:round-body-fat": "node migration/scripts/round-body-fat.js",
     "migrate:free-diet-plans": "node migration/scripts/migrate-free-diet-plans.js",
+    "migrate:gogetfit-plans": "node migration/scripts/migrate-gogetfit-plans.js",
     "migrate:rename-rdee-tdee": "node migration/scripts/rename-rdee-to-tdee.js",
     "provision:admin": "node scripts/provision-admin.js"
   },

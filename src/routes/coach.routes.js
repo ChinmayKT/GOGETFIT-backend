@@ -1,6 +1,10 @@
 import { Router } from 'express';
 
-import { getCoachByIdForMember, getCoachesForMember } from '../controllers/coach-member.controller.js';
+import {
+  getCoachByIdForMember,
+  getCoachesForMember,
+  getCoachPlansForMember,
+} from '../controllers/coach-member.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 
 const router = Router();
@@ -12,5 +16,7 @@ const router = Router();
  */
 router.get('/', requireAuth, getCoachesForMember);
 router.get('/:id', requireAuth, getCoachByIdForMember);
+// The plans this coach offers: every active GoGetFit Plan of the coach's level.
+router.get('/:id/plans', requireAuth, getCoachPlansForMember);
 
 export default router;

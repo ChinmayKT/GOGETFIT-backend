@@ -219,6 +219,26 @@ export const validateCoachListQuery = (query = {}) => {
   return out;
 };
 
+/**
+ * GET /api/coaches/:id/plans - paging only. Anything else in the query (a
+ * `coachLevel`, `level`, `planType`...) is ignored on purpose: the level is
+ * the coach's, read from MongoDB, and is not something a client can choose.
+ */
+export const validateCoachPlansQuery = (query = {}) => {
+  const out = {};
+  if (query.page !== undefined) {
+    const page = Number.parseInt(query.page, 10);
+    if (Number.isNaN(page) || page < 1) fail('page must be a positive integer');
+    out.page = page;
+  }
+  if (query.pageSize !== undefined) {
+    const pageSize = Number.parseInt(query.pageSize, 10);
+    if (Number.isNaN(pageSize) || pageSize < 1) fail('pageSize must be a positive integer');
+    out.pageSize = pageSize;
+  }
+  return out;
+};
+
 /** GET /admin/users/search - the phone is the only search key. */
 export const validateUserPhoneSearch = (query = {}) => {
   if (typeof query.phone !== 'string' || query.phone.trim() === '') fail('phone is required');

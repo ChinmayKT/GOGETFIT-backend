@@ -123,5 +123,15 @@ gogetfitPlanSchema.index(
   { name: 'gogetfitplan_status_type_level' },
 );
 
+/**
+ * Coach -> plans lookup: a coach offers every active plan of the coach's level,
+ * oldest first. {status, coachLevel} equality plus the createdAt sort are all
+ * served by this one index (the index above has planType in between).
+ */
+gogetfitPlanSchema.index(
+  { status: 1, coachLevel: 1, createdAt: 1 },
+  { name: 'gogetfitplan_status_level_created' },
+);
+
 export const GogetfitPlan = mongoose.model('GogetfitPlan', gogetfitPlanSchema);
 export default GogetfitPlan;

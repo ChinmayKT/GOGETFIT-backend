@@ -107,6 +107,61 @@ export const listPlans = async (params = {}) => {
   };
 };
 
+/**
+ * The member-facing plan: what the app's plan screens show, and nothing else.
+ * Its own allow-list - no status, legacy ids, migration stamp or audit trail.
+ */
+export const toMemberPlan = (doc) => ({
+  id: String(doc._id),
+  name: doc.name ?? null,
+  planType: doc.planType ?? null,
+  coachLevel: doc.coachLevel ?? null,
+  durationWeeks: doc.durationWeeks ?? null,
+  personsAllowed: doc.personsAllowed ?? null,
+  pricing: {
+    basePrice: doc.pricing?.basePrice ?? null,
+    reward: doc.pricing?.reward ?? null,
+    currency: PLAN_CURRENCY,
+  },
+  content: {
+    description: doc.content?.description ?? null,
+    inclusions: doc.content?.inclusions ?? null,
+    whatNext: doc.content?.whatNext ?? null,
+    termsAndConditions: doc.content?.termsAndConditions ?? null,
+    eligibility: doc.content?.eligibility ?? null,
+  },
+});
+
+/**
+ * Plans a coach of [coachLevel] offers: every ACTIVE plan of exactly that level.
+ * The level always comes from the coach document (see coach-member.controller),
+ * never from the request - so no client can ask for another level's plans.
+ * Oldest first, like the admin list.
+ */
+export const listActivePlansForLevel = async (coachLevel, params = {}) => {
+  const page = Math.max(1, Number.parseInt(params.page, 10) || 1);
+  const requested = Number.parseInt(params.pageSize, 10) || DEFAULT_PAGE_SIZE;
+  const pageSize = Math.min(Math.max(1, requested), MAX_PAGE_SIZE);
+
+  const filter = { status: 'active', coachLevel };
+  const [docs, total] = await Promise.all([
+    GogetfitPlan.find(filter)
+      .sort({ createdAt: 1, _id: 1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .lean(),
+    GogetfitPlan.countDocuments(filter),
+  ]);
+
+  return {
+    rows: docs.map(toMemberPlan),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+};
+
 export const getPlanById = async (id) => {
   if (!mongoose.isValidObjectId(id)) return null;
   const doc = await GogetfitPlan.findById(id).lean();
