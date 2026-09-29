@@ -161,7 +161,8 @@ test('the member plan shape carries the plan content and no admin internals', as
   await seedPlan('LEVEL 1');
   const [plan] = (await plansOf(coach._id)).body.data.plans;
 
-  assert.deepEqual(Object.keys(plan).sort(), ['coachLevel', 'content', 'durationWeeks', 'id', 'name', 'personsAllowed', 'planType', 'pricing']);
+  assert.deepEqual(Object.keys(plan).sort(), ['coachLevel', 'content', 'durationWeeks', 'id', 'image', 'name', 'personsAllowed', 'planType', 'pricing']);
+  assert.equal(plan.image, null);
   assert.deepEqual(plan.pricing, { basePrice: 4999, reward: 0, currency: 'INR' });
   assert.equal(plan.content.inclusions, '* a\n* b');
   const text = JSON.stringify(plan);

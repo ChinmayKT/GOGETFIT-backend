@@ -97,6 +97,8 @@ const FORBIDDEN_FIELDS = [
   'updatedAt',
   'deletedAt',
   'deletedBy',
+  // The cover image has its own upload/remove endpoints; never part of a plan write.
+  'image',
 ];
 
 const ALLOWED_FIELDS = ['name', 'planType', 'coachLevel', 'durationWeeks', 'personsAllowed', 'pricing', 'content', 'status'];

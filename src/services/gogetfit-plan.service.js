@@ -21,6 +21,8 @@ const SORTABLE = {
 
 const iso = (date) => (date ? date.toISOString() : null);
 
+const toImageRef = (image) => (image?.url ? { url: image.url, storageKey: image.storageKey ?? null } : null);
+
 /** Allow-listed list row: the old Package List's columns plus status and timestamps. */
 export const toPlanRow = (doc) => ({
   id: String(doc._id),
@@ -34,6 +36,7 @@ export const toPlanRow = (doc) => ({
     reward: doc.pricing?.reward ?? null,
     currency: PLAN_CURRENCY,
   },
+  image: toImageRef(doc.image),
   status: doc.status ?? null,
   legacyPackageId: doc.legacy?.packageId ?? null,
   createdAt: iso(doc.createdAt),
@@ -130,6 +133,7 @@ export const toMemberPlan = (doc) => ({
     termsAndConditions: doc.content?.termsAndConditions ?? null,
     eligibility: doc.content?.eligibility ?? null,
   },
+  image: toImageRef(doc.image),
 });
 
 /**

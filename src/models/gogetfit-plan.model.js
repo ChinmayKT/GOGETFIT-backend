@@ -32,6 +32,18 @@ const pricingSchema = new mongoose.Schema(
   { _id: false },
 );
 
+/**
+ * A stored image: where it is served from and the storage driver's key for it.
+ * Same shape as a coach picture; only the reference is kept, never the bytes.
+ */
+const imageRefSchema = new mongoose.Schema(
+  {
+    url: { type: String, required: true },
+    storageKey: { type: String, required: true },
+  },
+  { _id: false },
+);
+
 /** The five free-text sections the app shows on a plan, kept verbatim. */
 const contentSchema = new mongoose.Schema(
   {
@@ -84,6 +96,11 @@ const gogetfitPlanSchema = new mongoose.Schema(
 
     // Display information.
     content: { type: contentSchema, default: () => ({}) },
+    /**
+     * The plan's 3:1 cover image, or null. Plan-specific (not the coach's), set
+     * only through the plan image endpoints. Migrated plans have none.
+     */
+    image: { type: imageRefSchema, default: null },
 
     /**
      * Soft-delete state. The legacy admin had no delete at all, and enrollments

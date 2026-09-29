@@ -24,10 +24,12 @@ import {
 } from '../controllers/free-diet-plan.controller.js';
 import {
   deleteGogetfitPlan,
+  deleteGogetfitPlanImage,
   getGogetfitPlan,
   getGogetfitPlans,
   patchGogetfitPlan,
   postGogetfitPlan,
+  putGogetfitPlanImage,
 } from '../controllers/gogetfit-plan.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 import { rawImageBody } from '../middleware/upload.middleware.js';
@@ -75,5 +77,8 @@ router.post('/gogetfit-plans', postGogetfitPlan);
 router.get('/gogetfit-plans/:id', getGogetfitPlan);
 router.patch('/gogetfit-plans/:id', patchGogetfitPlan);
 router.delete('/gogetfit-plans/:id', deleteGogetfitPlan);
+// The plan's 3:1 cover image - its own lifecycle, never part of the plan PATCH.
+router.put('/gogetfit-plans/:id/image', rawImageBody, putGogetfitPlanImage);
+router.delete('/gogetfit-plans/:id/image', deleteGogetfitPlanImage);
 
 export default router;

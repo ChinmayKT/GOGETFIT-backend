@@ -47,3 +47,6 @@ export const PROFILE_PICTURE_FOLDER = 'profile';
  * cover and the user's own avatar three files that can never collide.
  */
 export const coachImageFolder = (coachId, slot) => `coaches/${coachId}/${slot}`;
+
+/** A GoGetFit Plan's cover image: its own folder per plan, for the same reason. */
+export const planImageFolder = (planId) => `gogetfit-plans/${planId}/cover`;

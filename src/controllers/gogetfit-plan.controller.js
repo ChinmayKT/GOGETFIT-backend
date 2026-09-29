@@ -1,4 +1,5 @@
 import { archivePlan, createPlan, getPlanById, listPlans, updatePlan } from '../services/gogetfit-plan.service.js';
+import { removePlanImage, setPlanImage } from '../services/gogetfit-plan-image.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import { validateCreatePlan, validatePlanListQuery, validateUpdatePlan } from '../validators/gogetfit-plan.validator.js';
 
@@ -58,6 +59,28 @@ export const deleteGogetfitPlan = async (req, res, next) => {
     const plan = await archivePlan(req.params.id, req.user._id);
     if (!plan) throw planNotFound();
     res.status(200).json({ success: true, message: 'GoGetFit plan deleted', data: { plan } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** PUT /api/admin/gogetfit-plans/:id/image - the raw image as the body, like the coach pictures. */
+export const putGogetfitPlanImage = async (req, res, next) => {
+  try {
+    const plan = await setPlanImage(req.params.id, req.body, req.user._id);
+    if (!plan) throw planNotFound();
+    res.status(200).json({ success: true, message: 'Plan image updated', data: { plan } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** DELETE /api/admin/gogetfit-plans/:id/image */
+export const deleteGogetfitPlanImage = async (req, res, next) => {
+  try {
+    const plan = await removePlanImage(req.params.id, req.user._id);
+    if (!plan) throw planNotFound();
+    res.status(200).json({ success: true, message: 'Plan image removed', data: { plan } });
   } catch (error) {
     next(error);
   }
