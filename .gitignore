@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+
+# Generated migration run reports
+migration/reports/runs/
+
+# Locally stored uploads (profile pictures)
+uploads/
+
+# Generated knowledge-graph output (rebuilt from the source)
+graphify-out/
