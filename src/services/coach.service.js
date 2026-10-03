@@ -377,6 +377,25 @@ export const listCoachesForMember = async (params = {}) => {
 };
 
 /** One visible coach, or null - inactive and unknown coaches are indistinguishable. */
+/**
+ * The coach record belonging to [userId] - what a signed-in coach sees of
+ * themselves in the Coach Workspace.
+ *
+ * Resolved from the account, never from a request parameter, so a coach can
+ * only ever read their own record here. The coach's own professional photo
+ * lives on this document; the account avatar is a different picture and is
+ * never substituted for it.
+ */
+export const getCoachForUser = async (userId) => {
+  if (!mongoose.isValidObjectId(userId)) return null;
+
+  const doc = await Coach.findOne({ userId }).lean();
+  if (!doc) return null;
+
+  const user = await User.findOne({ _id: doc.userId }, MEMBER_USER_PROJECTION).lean();
+  return user ? toMemberCoach(doc, user) : null;
+};
+
 export const getCoachForMember = async (id) => {
   if (!mongoose.isValidObjectId(id)) return null;
 

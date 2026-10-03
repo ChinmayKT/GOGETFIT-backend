@@ -1,8 +1,8 @@
 import { loginWithPassword } from '../services/admin-auth.service.js';
-import { getUserById, listUsers, toAdminUser } from '../services/admin.service.js';
+import { createUserByAdmin, getUserById, listUsers, toAdminUser, updateUserByAdmin } from '../services/admin.service.js';
 import { refreshAge } from '../services/user.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
-import { validateAdminLogin, validateUserListQuery } from '../validators/admin.validator.js';
+import { validateAdminLogin, validateCreateUser, validateUpdateUser, validateUserListQuery } from '../validators/admin.validator.js';
 
 /** POST /api/auth/admin/login - public, rate limited by the route. */
 export const postAdminLogin = async (req, res, next) => {
@@ -64,6 +64,28 @@ export const getAdminUserById = async (req, res, next) => {
     if (!user) throw notFound(ERROR_CODES.USER_NOT_FOUND, 'User not found');
 
     res.status(200).json({ success: true, data: { user } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** POST /api/admin/users - onboard a normal user (role "user" only). */
+export const postAdminUser = async (req, res, next) => {
+  try {
+    const input = validateCreateUser(req.body);
+    const result = await createUserByAdmin(input);
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** PATCH /api/admin/users/:id - edit a user's profile with the Add User form. */
+export const patchAdminUser = async (req, res, next) => {
+  try {
+    const input = validateUpdateUser(req.body);
+    const result = await updateUserByAdmin(req.params.id, input);
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
   }

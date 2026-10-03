@@ -13,6 +13,7 @@ import {
   validateUpdateCoach,
   validateUserPhoneSearch,
 } from '../validators/coach.validator.js';
+import { getCoachClients } from '../services/coach-dashboard.service.js';
 
 const coachNotFound = () => notFound(ERROR_CODES.COACH_NOT_FOUND, 'Coach not found');
 
@@ -58,6 +59,20 @@ export const getCoach = async (req, res, next) => {
     if (!coach) throw coachNotFound();
 
     res.status(200).json({ success: true, data: { coach } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/admin/coaches/:id/clients - the coach's enrollment statistics and
+ * every non-deleted enrollment with them (EnrolledClient.coachId).
+ */
+export const getCoachClientsForAdmin = async (req, res, next) => {
+  try {
+    const result = await getCoachClients(req.params.id);
+    if (!result) throw coachNotFound();
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
   }

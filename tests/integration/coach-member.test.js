@@ -205,3 +205,52 @@ test('members have no write access to coaches - here or on the admin API', async
   const admin = await server.request('PATCH', `/api/admin/coaches/${coach._id}`, { token: adminToken, body: { status: 'inactive' } });
   assert.equal(admin.status, 200);
 });
+
+// ---- GET /api/coaches/me ---------------------------------------------------
+
+test('a coach reads their own record, with their own professional photo', async () => {
+  const { user, coach } = await seedCoach({ name: 'Prajwal', pictures: { profilePicture: COACH_PICTURE } });
+
+  const response = await server.request('GET', '/api/coaches/me', { token: tokenFor(user) });
+
+  assert.equal(response.status, 200);
+  const body = response.body.data.coach;
+  assert.equal(body.id, String(coach._id));
+  assert.equal(body.profile.profilePicture.url, COACH_PICTURE.url);
+  // The Coach document's photo, never the account avatar - two different
+  // pictures of two different things.
+  assert.notEqual(body.profile.profilePicture.url, USER_AVATAR);
+});
+
+test('the record comes from the token, so no one can ask for another coach', async () => {
+  const mine = await seedCoach({ name: 'Mine', pictures: { profilePicture: COACH_PICTURE } });
+  await seedCoach({ name: 'Theirs' });
+
+  const response = await server.request('GET', '/api/coaches/me', { token: tokenFor(mine.user) });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.coach.id, String(mine.coach._id));
+});
+
+test('an account with no coach profile gets a 404, not someone else\'s', async () => {
+  const member = await seedUser({ name: 'Just a member' });
+
+  const response = await server.request('GET', '/api/coaches/me', { token: tokenFor(member) });
+
+  assert.equal(response.status, 404);
+  assert.equal(response.body.error.code, 'COACH_NOT_FOUND');
+});
+
+test('"me" is not read as a coach id', async () => {
+  // Declared before '/:id', so the literal never reaches the id handler.
+  const response = await server.request('GET', '/api/coaches/me', { token: memberToken });
+
+  assert.equal(response.status, 404);
+  assert.equal(response.body.error.message, 'You do not have a coach profile');
+});
+
+test('GET /api/coaches/me needs a token', async () => {
+  const response = await server.request('GET', '/api/coaches/me');
+
+  assert.equal(response.status, 401);
+});

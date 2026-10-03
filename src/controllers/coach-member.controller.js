@@ -1,4 +1,8 @@
-import { getCoachForMember, listCoachesForMember } from '../services/coach.service.js';
+import {
+  getCoachForMember,
+  getCoachForUser,
+  listCoachesForMember,
+} from '../services/coach.service.js';
 import { listActivePlansForLevel } from '../services/gogetfit-plan.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import { validateCoachPlansQuery, validateMemberCoachListQuery } from '../validators/coach.validator.js';
@@ -30,6 +34,25 @@ export const getCoachesForMember = async (req, res, next) => {
 };
 
 /** GET /api/coaches/:id - one visible coach. Inactive coaches are a 404. */
+/**
+ * GET /api/coaches/me - the authenticated coach's own record.
+ *
+ * The id comes from the JWT subject, never from the request, so this can only
+ * ever return the caller's own coach document. An account that is not a coach
+ * gets a 404: there is no coach record to return, and that is a state the
+ * client shows rather than an error.
+ */
+export const getMyCoachRecord = async (req, res, next) => {
+  try {
+    const coach = await getCoachForUser(req.user._id);
+    if (!coach) throw notFound(ERROR_CODES.COACH_NOT_FOUND, 'You do not have a coach profile');
+
+    res.status(200).json({ success: true, data: { coach } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getCoachByIdForMember = async (req, res, next) => {
   try {
     const coach = await getCoachForMember(req.params.id);
