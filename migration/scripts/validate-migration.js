@@ -10,7 +10,7 @@
 import mongoose from 'mongoose';
 
 import logger from '../../src/config/logger.js';
-import User from '../../src/models/user.model.js';
+import User, { isProfileComplete } from '../../src/models/user.model.js';
 import MigrationConflict, { CONFLICT_STATUS } from '../../src/models/migration-conflict.model.js';
 import { calculateAge } from '../../src/utils/age.js';
 import { migrationEnv } from '../config/migration.env.js';
@@ -112,16 +112,7 @@ export const validateMigration = async ({ runId = null, now = new Date() } = {})
   );
 
   // 11. profileCompleted reflects the required fields.
-  const wrongCompletion = migrated.filter((user) => {
-    const profile = user.profile || {};
-    const expected = Boolean(
-      profile.name &&
-        profile.dateOfBirth &&
-        (profile.gender === 'male' || profile.gender === 'female') &&
-        profile.city,
-    );
-    return user.profileCompleted !== expected;
-  });
+  const wrongCompletion = migrated.filter((user) => user.profileCompleted !== isProfileComplete(user.profile || {}));
   record(
     'profileCompleted matches the required profile fields',
     wrongCompletion.length === 0,

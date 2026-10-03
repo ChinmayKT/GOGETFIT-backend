@@ -68,8 +68,11 @@ test('no legacy authentication field can reach the transformed document', () => 
 });
 
 test('migration completion and profile completion are independent', () => {
+  // Under the strict rule a migrated user is never complete on arrival: no
+  // verified-in-app email, no profile picture and no fitness profile yet.
   const complete = transformLegacyUser(legacyRow(), { now: NOW });
-  assert.equal(complete.document.profileCompleted, true);
+  assert.equal(complete.document.profileCompleted, false);
+  assert.equal(complete.document.legacy.userId, 1001);
 
   const partial = transformLegacyUser(legacyRow({ dob: null, city_name: null }), { now: NOW });
   assert.equal(partial.document.profileCompleted, false);

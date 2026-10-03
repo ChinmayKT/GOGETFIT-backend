@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 
 import { ROLE_USER, ROLES } from '../constants/roles.js';
 import { roundBodyFat } from '../utils/round.js';
+import { ACTIVITY_LEVELS, FITNESS_GOALS, FOOD_TYPES } from '../utils/fitness-calculations.js';
+import { FITNESS_NUMBERS } from '../validators/profile.validator.js';
 
 export const LEGACY_SOURCE = 'gogetfit';
 
@@ -186,16 +188,54 @@ userSchema.index(
   },
 );
 
+const filled = (value) => value !== null && value !== undefined && String(value).trim() !== '';
+/** A number within the range the profile save accepts (validators/profile.validator.js). */
+const inRange = (value, field) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= FITNESS_NUMBERS[field].min && value <= FITNESS_NUMBERS[field].max;
+
+/**
+ * THE profile-complete rule - the only place it is decided. profileCompleted is
+ * true only when ALL of these hold:
+ *
+ *   1. the email is verified (isEmailVerified === true)
+ *   2. basic profile: name, dateOfBirth (a real date), age, gender (male/female),
+ *      city, email, profilePicture
+ *   3. fitnessProfile with VALID values:
+ *        height, weight, bodyFatPercentage, bmr, tdee - numbers within the
+ *          ranges the profile save accepts
+ *        activityLevel, foodType, goal - the app's own enum values
+ *
+ * Anything else is false. Clients can never set the flag; every write that can
+ * change one of these fields recalculates it.
+ */
+export const isProfileComplete = (profile = {}) => {
+  const fp = profile?.fitnessProfile;
+  if (!fp || typeof fp !== 'object') return false;
+  return Boolean(
+    profile.isEmailVerified === true &&
+      filled(profile.name) &&
+      profile.dateOfBirth instanceof Date &&
+      !Number.isNaN(profile.dateOfBirth.getTime()) &&
+      typeof profile.age === 'number' &&
+      Number.isFinite(profile.age) &&
+      (profile.gender === 'male' || profile.gender === 'female') &&
+      filled(profile.city) &&
+      filled(profile.email) &&
+      filled(profile.profilePicture) &&
+      inRange(fp.height, 'height') &&
+      inRange(fp.weight, 'weight') &&
+      inRange(fp.bodyFatPercentage, 'bodyFatPercentage') &&
+      inRange(fp.bmr, 'bmr') &&
+      inRange(fp.tdee, 'tdee') &&
+      ACTIVITY_LEVELS.some((a) => a.value === fp.activityLevel) &&
+      FOOD_TYPES.includes(fp.foodType) &&
+      FITNESS_GOALS.includes(fp.goal),
+  );
+};
+
 /** Backend-owned rule: the client can never set profileCompleted directly. */
 userSchema.methods.recomputeProfileCompletion = function recomputeProfileCompletion() {
-  const { name, dateOfBirth, gender, city } = this.profile || {};
-  this.profileCompleted = Boolean(
-    name && String(name).trim() !== '' &&
-      dateOfBirth instanceof Date &&
-      !Number.isNaN(dateOfBirth.getTime()) &&
-      (gender === 'male' || gender === 'female') &&
-      city && String(city).trim() !== '',
-  );
+  this.profileCompleted = isProfileComplete(this.profile);
   return this.profileCompleted;
 };
 

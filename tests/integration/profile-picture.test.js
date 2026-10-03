@@ -277,3 +277,36 @@ test('phone OTP authentication is unaffected', async () => {
   assert.equal(verified.status, 201);
   assert.equal(verified.body.data.user.profile.profilePicture, null);
 });
+
+test('the profile picture completes (or un-completes) an otherwise full profile', async () => {
+  await User.updateOne(
+    { 'phone.normalized': `91${PHONE}` },
+    {
+      $set: {
+        'profile.name': 'John',
+        'profile.dateOfBirth': new Date('2001-09-22T00:00:00Z'),
+        'profile.age': 25,
+        'profile.gender': 'male',
+        'profile.city': 'Bengaluru',
+        'profile.email': 'john@example.com',
+        'profile.isEmailVerified': true,
+        'profile.fitnessProfile': {
+          height: 176.8,
+          weight: 66.3,
+          bodyFatPercentage: 15,
+          activityLevel: 'sedentary',
+          foodType: 'nonVegetarian',
+          goal: 'maintainPhysique',
+          bmr: 1648,
+          tdee: 1977.6,
+        },
+        profileCompleted: false,
+      },
+    },
+  );
+  assert.equal((await upload(jpeg(), { token })).status, 200);
+  assert.equal((await User.findOne({ 'phone.normalized': `91${PHONE}` }).lean()).profileCompleted, true);
+
+  await server.request('DELETE', '/api/users/me/profile-picture', { token });
+  assert.equal((await User.findOne({ 'phone.normalized': `91${PHONE}` }).lean()).profileCompleted, false);
+});

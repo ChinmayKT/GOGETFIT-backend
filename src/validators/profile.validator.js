@@ -2,7 +2,7 @@ import { ERROR_CODES, badRequest } from '../utils/errors.js';
 import { isFutureDate, parseDateOfBirth } from '../utils/age.js';
 import { roundBodyFat } from '../utils/round.js';
 
-const ALLOWED_FIELDS = ['name', 'dateOfBirth', 'gender', 'city', 'fitnessProfile'];
+const ALLOWED_FIELDS = ['name', 'dateOfBirth', 'gender', 'city', 'email', 'fitnessProfile'];
 
 /**
  * Numeric fitness fields, with the range a real measurement can fall in.
@@ -13,7 +13,7 @@ const ALLOWED_FIELDS = ['name', 'dateOfBirth', 'gender', 'city', 'fitnessProfile
  * The bounds are what that formula can produce from an accepted height, weight
  * and age; anything outside them is not a figure this system calculated.
  */
-const FITNESS_NUMBERS = {
+export const FITNESS_NUMBERS = {
   height: { min: 50, max: 300, label: 'height in cm' },
   weight: { min: 10, max: 500, label: 'weight in kg' },
   bodyFatPercentage: { min: 1, max: 80, label: 'body fat percentage' },
@@ -98,7 +98,9 @@ const FORBIDDEN_FIELDS = [
   'status',
   'legacy',
   'phone',
-  'email',
+  // `email` is editable until it is verified; the controller enforces that
+  // lock. Only the verified FLAG stays backend-owned, so a client can never
+  // mark its own address trusted.
   'isEmailVerified',
   'profilePicture',
 ];
@@ -137,6 +139,25 @@ export const validateProfilePatch = (body = {}, now = new Date()) => {
       throw badRequest(ERROR_CODES.VALIDATION_ERROR, "gender must be 'male' or 'female'");
     }
     patch.gender = body.gender;
+  }
+
+  if (body.email !== undefined) {
+    // Null or blank clears the address - "I have not given one" is a real
+    // state, and the member may remove what they typed.
+    if (body.email === null || (typeof body.email === 'string' && body.email.trim() === '')) {
+      patch.email = null;
+    } else {
+      if (typeof body.email !== 'string') {
+        throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'email must be a string or null');
+      }
+      const email = body.email.trim().toLowerCase();
+      // Deliberately permissive: one @, something either side, no spaces. The
+      // address proves itself by being verified, not by matching a regex.
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+        throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'email must be a valid email address');
+      }
+      patch.email = email;
+    }
   }
 
   if (body.fitnessProfile !== undefined) {

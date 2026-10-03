@@ -34,6 +34,17 @@ export const patchProfile = async (req, res, next) => {
     const patch = validateProfilePatch(req.body);
 
     for (const [key, value] of Object.entries(patch)) {
+      if (key === 'email') {
+        // A new address is untrusted until it proves itself, so changing it
+        // always drops the verified flag. Re-sending the same address is not a
+        // change and leaves the flag alone.
+        const next = value;
+        if (next !== (user.profile?.email ?? null)) {
+          user.profile.email = next;
+          user.profile.isEmailVerified = false;
+        }
+        continue;
+      }
       if (key === 'fitnessProfile') {
         // Merged field by field so a partial update never clears the values
         // the member already has.

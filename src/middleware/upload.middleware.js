@@ -2,6 +2,7 @@ import express from 'express';
 
 import env from '../config/env.js';
 import { SUPPORTED_IMAGE_TYPES } from '../utils/image.js';
+import { SUPPORTED_VIDEO_TYPES } from '../utils/video.js';
 
 /**
  * Raw image bytes rather than multipart: the payload is a single file, so this
@@ -15,6 +16,16 @@ import { SUPPORTED_IMAGE_TYPES } from '../utils/image.js';
 export const rawImageBody = express.raw({
   type: SUPPORTED_IMAGE_TYPES,
   limit: env.storage.maxUploadBytes,
+});
+
+/**
+ * The same raw-body approach for workout videos, with its own larger limit so a
+ * video upload cannot be capped by the avatar limit and an oversized body is
+ * still refused before it is buffered.
+ */
+export const rawVideoBody = express.raw({
+  type: SUPPORTED_VIDEO_TYPES,
+  limit: env.storage.maxVideoUploadBytes,
 });
 
 export default rawImageBody;

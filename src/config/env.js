@@ -29,6 +29,9 @@ export const env = {
     debug: bool(process.env.OTP_DEBUG, false),
   },
 
+  // The calendar day coupons (and other date-only rules) are judged in.
+  businessTimezone: process.env.BUSINESS_TIMEZONE || 'Asia/Kolkata',
+
   storage: {
     // Only the local-filesystem driver exists; see src/services/storage.
     driver: process.env.STORAGE_DRIVER || 'local',
@@ -38,6 +41,8 @@ export const env = {
     // emulator the host is reachable at 10.0.2.2, so this is configurable.
     publicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL || 'http://10.0.2.2:3000',
     maxUploadBytes: int(process.env.MAX_UPLOAD_BYTES, 5 * 1024 * 1024),
+    // Workout videos are far larger than an avatar; the legacy files run to 7 MB.
+    maxVideoUploadBytes: int(process.env.MAX_VIDEO_UPLOAD_BYTES, 50 * 1024 * 1024),
   },
 
   // Business switch from spec section 12: migration-only vs. open registration.

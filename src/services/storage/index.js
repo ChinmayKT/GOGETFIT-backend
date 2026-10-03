@@ -50,3 +50,19 @@ export const coachImageFolder = (coachId, slot) => `coaches/${coachId}/${slot}`;
 
 /** A GoGetFit Plan's cover image: its own folder per plan, for the same reason. */
 export const planImageFolder = (planId) => `gogetfit-plans/${planId}/cover`;
+
+/**
+ * A workout's media: its own folder per workout and per slot, so the video and
+ * the thumbnail can never collide and removing one never touches the other.
+ */
+export const workoutVideoFolder = (workoutId) => `workouts/${workoutId}/video`;
+export const workoutThumbnailFolder = (workoutId) => `workouts/${workoutId}/thumbnail`;
+
+/** A food's picture: its own folder per food, so two foods never share a file. */
+export const foodImageFolder = (foodId) => `foods/${foodId}`;
+
+/**
+ * A member's Body Metrics media: a folder per enrollment and slot, so the three
+ * photos and the video never collide and nothing is shared between cycles.
+ */
+export const bodyMetricsMediaFolder = (enrollmentId, slot) => `body-metrics/${enrollmentId}/${slot}`;

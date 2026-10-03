@@ -102,11 +102,53 @@ test('profileCompleted becomes true only when every required field is present', 
   });
   assert.equal(stillPartial.body.data.user.profileCompleted, false);
 
-  const complete = await server.request('PATCH', '/api/users/me/profile', {
+  // The four onboarding fields are no longer enough.
+  const onboarded = await server.request('PATCH', '/api/users/me/profile', {
     token,
     body: { dateOfBirth: '2001-09-22' },
   });
+  assert.equal(onboarded.body.data.user.profileCompleted, false);
+
+  // Every fitness value: still missing email and the profile picture.
+  const fitness = await server.request('PATCH', '/api/users/me/profile', {
+    token,
+    body: {
+      fitnessProfile: {
+        height: 176.8,
+        weight: 66.3,
+        bodyFatPercentage: 15,
+        activityLevel: 'sedentary',
+        foodType: 'nonVegetarian',
+        goal: 'maintainPhysique',
+        bmr: 1648,
+        tdee: 1977.6,
+      },
+    },
+  });
+  assert.equal(fitness.body.data.user.profileCompleted, false);
+
+  // Email and picture arrive through their own paths (not the profile PATCH).
+  await User.updateOne(
+    { 'phone.normalized': `91${PHONE}` },
+    { $set: { 'profile.email': 'john@example.com', 'profile.profilePicture': 'http://x/uploads/profile/a.png' } },
+  );
+  // Everything is there, but the email is not verified yet: still incomplete.
+  const unverified = await server.request('PATCH', '/api/users/me/profile', { token, body: { city: 'Bengaluru' } });
+  assert.equal(unverified.body.data.user.profileCompleted, false);
+
+  await User.updateOne({ 'phone.normalized': `91${PHONE}` }, { $set: { 'profile.isEmailVerified': true } });
+  const complete = await server.request('PATCH', '/api/users/me/profile', { token, body: { city: 'Bengaluru' } });
   assert.equal(complete.body.data.user.profileCompleted, true);
+  // The client can never set it.
+  assert.equal((await server.request('PATCH', '/api/users/me/profile', { token, body: { profileCompleted: false } })).status, 400);
+
+  // Taking one field away makes it incomplete again.
+  const cleared = await server.request('PATCH', '/api/users/me/profile', { token, body: { fitnessProfile: { goal: null } } });
+  assert.equal(cleared.body.data.user.profileCompleted, false);
+
+  // Re-completing it makes it true again.
+  const again = await server.request('PATCH', '/api/users/me/profile', { token, body: { fitnessProfile: { goal: 'fatLoss' } } });
+  assert.equal(again.body.data.user.profileCompleted, true);
 });
 
 test('the client cannot set profileCompleted itself', async () => {
@@ -166,11 +208,11 @@ test('an unsupported gender is rejected', async () => {
 test('unknown profile fields are rejected', async () => {
   const response = await server.request('PATCH', '/api/users/me/profile', {
     token,
-    body: { name: 'John', email: 'john@example.com' },
+    body: { name: 'John', nickname: 'Johnny' },
   });
 
   assert.equal(response.status, 400);
-  assert.match(response.body.error.message, /email/);
+  assert.match(response.body.error.message, /nickname/);
 });
 
 test('GET /me refreshes a stale cached age after a birthday', async () => {
@@ -267,14 +309,18 @@ test('the user payload exposes no credential or legacy auth field', async () => 
   assert.equal(serialized.includes('999'), false);
 });
 
-test('a profile patch cannot set email - the backfill owns it', async () => {
+test('a profile patch stores the email, so it is not left on the phone', async () => {
   const response = await server.request('PATCH', '/api/users/me/profile', {
     token,
-    body: { name: 'John', email: 'attacker@example.com' },
+    body: { name: 'John', email: 'John@Example.com' },
   });
 
-  assert.equal(response.status, 400);
-  assert.match(response.body.error.message, /email/);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.data.user.profile.email, 'john@example.com');
+
+  const stored = await User.findOne({ 'phone.normalized': '919111111111' });
+  assert.equal(stored.profile.email, 'john@example.com', 'written to the database');
+  assert.equal(stored.profile.isEmailVerified, false, 'a new address is untrusted');
 });
 
 test('GET /me reports the email fields inside profile, never at the root', async () => {
@@ -342,17 +388,35 @@ test('a verified email survives an otherwise valid profile patch', async () => {
   assert.notEqual(stored.profile.name, 'Renamed', 'nothing was partially applied');
 });
 
-test('email is not part of the profile contract even when unverified', async () => {
-  const response = await server.request('PATCH', '/api/users/me/profile', {
+test('an unverified email can be set on its own, and cleared again', async () => {
+  const set = await server.request('PATCH', '/api/users/me/profile', {
     token,
     body: { email: 'new@example.com' },
   });
 
+  assert.equal(set.status, 200);
+  let stored = await User.findOne({ 'phone.normalized': '919111111111' });
+  assert.equal(stored.profile.email, 'new@example.com');
+
+  // Removing it is a real edit too: "I gave no address" is a state.
+  const cleared = await server.request('PATCH', '/api/users/me/profile', {
+    token,
+    body: { email: null },
+  });
+
+  assert.equal(cleared.status, 200);
+  stored = await User.findOne({ 'phone.normalized': '919111111111' });
+  assert.equal(stored.profile.email, null);
+});
+
+test('an address that is not one is refused', async () => {
+  const response = await server.request('PATCH', '/api/users/me/profile', {
+    token,
+    body: { email: 'not-an-email' },
+  });
+
   assert.equal(response.status, 400);
   assert.match(response.body.error.message, /email/);
-
-  const stored = await User.findOne({ 'phone.normalized': '919111111111' });
-  assert.equal(stored.profile.email, null, 'no email-setting behaviour was added');
 });
 
 test('isEmailVerified cannot be set by the client', async () => {

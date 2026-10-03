@@ -9,6 +9,12 @@ import MigrationConflict from '../../src/models/migration-conflict.model.js';
 import FreeDietPlan from '../../src/models/free-diet-plan.model.js';
 import Coach from '../../src/models/coach.model.js';
 import GogetfitPlan from '../../src/models/gogetfit-plan.model.js';
+import Coupon from '../../src/models/coupon.model.js';
+import EnrolledClient from '../../src/models/enrolled-client.model.js';
+import Food from '../../src/models/food.model.js';
+import CartItem from '../../src/models/cart-item.model.js';
+import Questionnaire from '../../src/models/questionnaire.model.js';
+import BodyMetrics from '../../src/models/body-metrics.model.js';
 
 /**
  * Integration tests run against a dedicated database on the configured cluster
@@ -33,6 +39,11 @@ export const connectTestDb = async () => {
     FreeDietPlan.syncIndexes(),
     Coach.syncIndexes(),
     GogetfitPlan.syncIndexes(),
+    Coupon.syncIndexes(),
+    EnrolledClient.syncIndexes(),
+    Food.syncIndexes(),
+    CartItem.syncIndexes(),
+    Questionnaire.syncIndexes(),
   ]);
 };
 
@@ -44,6 +55,12 @@ export const clearTestDb = async () => {
     FreeDietPlan.deleteMany({}),
     Coach.deleteMany({}),
     GogetfitPlan.deleteMany({}),
+    Coupon.deleteMany({}),
+    EnrolledClient.deleteMany({}),
+    Food.deleteMany({}),
+    CartItem.deleteMany({}),
+    Questionnaire.deleteMany({}),
+    BodyMetrics.deleteMany({}),
   ]);
 };
 

@@ -28,8 +28,35 @@ export const ERROR_CODES = {
   COACH_ALREADY_EXISTS: 'COACH_ALREADY_EXISTS',
   COACH_NOT_FOUND: 'COACH_NOT_FOUND',
   GOGETFIT_PLAN_NOT_FOUND: 'GOGETFIT_PLAN_NOT_FOUND',
+  ENROLLED_CLIENT_NOT_FOUND: 'ENROLLED_CLIENT_NOT_FOUND',
+  COUPON_NOT_FOUND: 'COUPON_NOT_FOUND',
+  // Cart: one active entry per member, coach and plan.
+  CART_ITEM_EXISTS: 'CART_ITEM_EXISTS',
+  CART_ITEM_NOT_FOUND: 'CART_ITEM_NOT_FOUND',
+  CART_ITEM_NOT_ACTIVE: 'CART_ITEM_NOT_ACTIVE',
+  WORKOUT_NOT_FOUND: 'WORKOUT_NOT_FOUND',
+  // No questionnaire has been started for this enrollment yet.
+  QUESTIONNAIRE_NOT_FOUND: 'QUESTIONNAIRE_NOT_FOUND',
+  // No Body Metrics have been started for this enrollment yet.
+  BODY_METRICS_NOT_FOUND: 'BODY_METRICS_NOT_FOUND',
+  // Body Metrics are submitted once per enrollment; a submitted record is final.
+  BODY_METRICS_ALREADY_SUBMITTED: 'BODY_METRICS_ALREADY_SUBMITTED',
+  // A submission is missing a measurement or a required photo.
+  BODY_METRICS_INCOMPLETE: 'BODY_METRICS_INCOMPLETE',
+  FOOD_NOT_FOUND: 'FOOD_NOT_FOUND',
+  // Another ACTIVE coupon already uses this code.
+  COUPON_CODE_EXISTS: 'COUPON_CODE_EXISTS',
+  // Admin manual enrollment: a referenced record exists but cannot be used.
+  USER_INACTIVE: 'USER_INACTIVE',
+  GOGETFIT_PLAN_INACTIVE: 'GOGETFIT_PLAN_INACTIVE',
+  COACH_INACTIVE: 'COACH_INACTIVE',
+  // The plan is not one the chosen coach offers (plan level != coach level).
+  PLAN_NOT_OFFERED_BY_COACH: 'PLAN_NOT_OFFERED_BY_COACH',
+  // Not within its validity dates today (expired or not yet started).
+  COUPON_INACTIVE: 'COUPON_INACTIVE',
   EMAIL_ALREADY_VERIFIED: 'EMAIL_ALREADY_VERIFIED',
   UNSUPPORTED_IMAGE_TYPE: 'UNSUPPORTED_IMAGE_TYPE',
+  UNSUPPORTED_VIDEO_TYPE: 'UNSUPPORTED_VIDEO_TYPE',
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   NOT_FOUND: 'NOT_FOUND',
   INTERNAL_ERROR: 'INTERNAL_ERROR',

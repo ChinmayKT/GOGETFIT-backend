@@ -23,11 +23,34 @@ export const migrationEnv = {
   },
 
   userTable: process.env.MIGRATION_USER_TABLE || 'm_user',
+  // Enrollment / purchase flow.
+  enrollmentTable: process.env.MIGRATION_ENROLLMENT_TABLE || 't_enrollment',
+  paymentTable: process.env.MIGRATION_PAYMENT_TABLE || 't_payment',
+  coachTable: process.env.MIGRATION_COACH_TABLE || 'm_coach',
   // Free Diet Plan templates: the plan row and its food rows.
   planTable: process.env.MIGRATION_PLAN_TABLE || 'm_plan',
   planMealTable: process.env.MIGRATION_PLAN_MEAL_TABLE || 'r_plan_meal',
   // GoGetFit Plans (paid coaching packages).
   packageTable: process.env.MIGRATION_PACKAGE_TABLE || 'm_package',
+  // Admin-managed coupons.
+  couponTable: process.env.MIGRATION_COUPON_TABLE || 'm_coupon',
+  // The food master and its nutrition table, joined exactly as the legacy
+  // admin's food list joined them.
+  foodTable: process.env.MIGRATION_FOOD_TABLE || 'm_food',
+  foodEnergyTable: process.env.MIGRATION_FOOD_ENERGY_TABLE || 'r_food_energy',
+  // The workout master, and the plan link table that references it.
+  workoutTable: process.env.MIGRATION_WORKOUT_TABLE || 'm_workout',
+  workoutPlanLinkTable: process.env.MIGRATION_WORKOUT_PLAN_LINK_TABLE || 'r_workout_plan',
+  /** Where the legacy workout media is served from (video and thumbnail subfolders). */
+  legacyWorkoutMediaBaseUrl: (process.env.MIGRATION_LEGACY_WORKOUT_MEDIA_BASE_URL
+    || 'https://apiimages.gogetfitonline.com/WorkOut/').replace(/\/?$/, '/'),
+  /**
+   * Where the legacy food pictures are served from. The database only ever held
+   * a filename (m_food.image_file_name); the files themselves live in the
+   * legacy admin's wwwroot/Images and are fetched over HTTP from here.
+   */
+  legacyImageBaseUrl: (process.env.MIGRATION_LEGACY_IMAGE_BASE_URL
+    || 'https://apiimages.gogetfitonline.com/images/').replace(/\/?$/, '/'),
   // Safety rail: running against the production legacy database must be an
   // explicit, deliberate act rather than a leftover .env value.
   allowProduction: ['1', 'true', 'yes'].includes(

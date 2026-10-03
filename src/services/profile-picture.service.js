@@ -1,6 +1,6 @@
 import env from '../config/env.js';
 import logger from '../config/logger.js';
-import User from '../models/user.model.js';
+import User, { isProfileComplete } from '../models/user.model.js';
 import { assertValidImage } from '../utils/image.js';
 import { PROFILE_PICTURE_FOLDER, getStorage } from './storage/index.js';
 
@@ -25,8 +25,13 @@ export const setProfilePicture = async (user, buffer) => {
 
   // 2. Point the profile at it. Only this field is written, so the email lock
   //    and every other profile value are untouched.
-  await User.updateOne({ _id: user._id }, { $set: { 'profile.profilePicture': url } });
   user.profile.profilePicture = url;
+  // The photo is part of the profile-complete rule, so the flag follows it.
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { 'profile.profilePicture': url, profileCompleted: isProfileComplete(user.profile) } },
+  );
+  user.profileCompleted = isProfileComplete(user.profile);
 
   // 3. Only now discard the old file, and only if it is genuinely replaced.
   if (previous && previous !== url) {
@@ -44,8 +49,10 @@ export const setProfilePicture = async (user, buffer) => {
 export const removeProfilePicture = async (user) => {
   const previous = user.profile?.profilePicture ?? null;
 
-  await User.updateOne({ _id: user._id }, { $set: { 'profile.profilePicture': null } });
   user.profile.profilePicture = null;
+  // Without a photo the profile is no longer complete.
+  await User.updateOne({ _id: user._id }, { $set: { 'profile.profilePicture': null, profileCompleted: false } });
+  user.profileCompleted = false;
 
   if (previous) {
     await getStorage()

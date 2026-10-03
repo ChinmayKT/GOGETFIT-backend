@@ -351,7 +351,7 @@ test('an unknown fitness field is rejected', async () => {
   assert.match(response.body.error.message, /bmi/);
 });
 
-test('fitness values never make profileCompleted depend on them', async () => {
+test('the four onboarding fields alone no longer complete the profile - the fitness values are required too', async () => {
   ({ token } = await login(server.request, '9111111111'));
 
   const response = await server.request('PATCH', '/api/users/me/profile', {
@@ -364,8 +364,8 @@ test('fitness values never make profileCompleted depend on them', async () => {
     },
   });
 
-  // Every fitness value is still null, and the profile is complete regardless.
-  assert.equal(response.body.data.user.profileCompleted, true);
+  // Every fitness value is still null, so the profile is not complete.
+  assert.equal(response.body.data.user.profileCompleted, false);
   assert.equal(response.body.data.user.profile.fitnessProfile.height, null);
 });
 
@@ -713,7 +713,7 @@ test('a zero or impossible energy figure is rejected', async () => {
   assert.equal(stored.profile.fitnessProfile.tdee, null);
 });
 
-test('null energy figures leave profileCompleted alone', async () => {
+test('without BMR and TDEE the profile stays incomplete', async () => {
   ({ token } = await login(server.request, '9111111111'));
 
   const response = await server.request('PATCH', '/api/users/me/profile', {
@@ -726,7 +726,7 @@ test('null energy figures leave profileCompleted alone', async () => {
     },
   });
 
-  assert.equal(response.body.data.user.profileCompleted, true);
+  assert.equal(response.body.data.user.profileCompleted, false);
   assert.equal(response.body.data.user.profile.fitnessProfile.bmr, null);
   assert.equal(response.body.data.user.profile.fitnessProfile.tdee, null);
 });

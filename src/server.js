@@ -8,6 +8,7 @@ import User from './models/user.model.js';
 import Otp from './models/otp.model.js';
 import MigrationConflict from './models/migration-conflict.model.js';
 import FreeDietPlan from './models/free-diet-plan.model.js';
+import EnrolledClient from './models/enrolled-client.model.js';
 
 /**
  * Unique indexes are hard database constraints, so they are built at startup
@@ -19,6 +20,7 @@ const ensureIndexes = async () => {
     Otp.syncIndexes(),
     MigrationConflict.syncIndexes(),
     FreeDietPlan.syncIndexes(),
+    EnrolledClient.syncIndexes(),
   ]);
   logger.info('MongoDB indexes verified');
 };
@@ -36,6 +38,7 @@ const listen = (server, port) =>
     server.listen(port, () => {
       const address = server.address();
       if (!address) {
+        
         reject(new Error(`Failed to bind to port ${port}`));
         return;
       }

@@ -1,6 +1,7 @@
 import { migrationEnv } from '../config/migration.env.js';
 import { transformLegacyPhone } from './phone.transformer.js';
 import { calculateAge, parseDateOfBirth } from '../../src/utils/age.js';
+import { isProfileComplete } from '../../src/models/user.model.js';
 
 /**
  * Explicit business rule for the new single-name field, selected by
@@ -50,13 +51,8 @@ export const resolveCity = (value) => {
   return text === '' ? null : text;
 };
 
-const profileIsComplete = (profile) =>
-  Boolean(
-    profile.name &&
-      profile.dateOfBirth instanceof Date &&
-      (profile.gender === 'male' || profile.gender === 'female') &&
-      profile.city,
-  );
+/** The application's single profile-complete rule (user.model.js), never a copy of it. */
+const profileIsComplete = (profile) => isProfileComplete(profile);
 
 /**
  * Maps one legacy row onto the new user shape. Legacy authentication fields are
