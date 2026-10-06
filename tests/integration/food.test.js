@@ -22,8 +22,12 @@ const validFood = (overrides = {}) => ({
   name: 'Paneer Cubes',
   foodType: 'Vegetarian',
   brand: 'Farm Fresh',
-  serving: { unit: 'Grams', quantity: 100 },
-  nutrition: { calories: 114, fat: 2.6, carbs: 0, protein: 21 },
+  servingUnit: 'Grams',
+  servingQuantity: 100,
+  calories: 114,
+  fat: 2.6,
+  carbs: 0,
+  protein: 21,
   notes: 'High protein',
   ...overrides,
 });
@@ -34,14 +38,27 @@ const seedMigratedFood = (foodId, overrides = {}) =>
     name: `Legacy food ${foodId}`,
     foodType: 'Vegetarian',
     brand: null,
-    serving: { unit: 'Grams', quantity: 100 },
-    nutrition: { calories: 100, fat: 1, carbs: 2, protein: 3 },
+    servingUnit: 'Grams',
+    servingQuantity: 100,
+    calories: 100,
+    fat: 1,
+    carbs: 2,
+    protein: 3,
     notes: null,
     image: null,
     legacy: { source: 'gogetfit', foodId },
     migration: { runId: 'foods-test', migratedAt: new Date(), version: 1 },
     ...overrides,
   });
+
+const flat = (food) => ({
+  servingUnit: food.servingUnit,
+  servingQuantity: food.servingQuantity,
+  calories: food.calories,
+  fat: food.fat,
+  carbs: food.carbs,
+  protein: food.protein,
+});
 
 const create = (body, token = adminToken) => server.request('POST', '/api/admin/foods', { token, body });
 const list = (qs = '', token = adminToken) => server.request('GET', `/api/admin/foods${qs}`, { token });
@@ -144,9 +161,9 @@ test('regex metacharacters in the search term are escaped, not executed', async 
 });
 
 test('food type and unit filters use the new vocabulary and run server-side', async () => {
-  await seedMigratedFood(1, { name: 'Chicken', foodType: 'Non-Vegetarian', serving: { unit: 'Grams', quantity: 100 } });
-  await seedMigratedFood(2, { name: 'Milk', foodType: 'Vegetarian', serving: { unit: 'ML', quantity: 200 } });
-  await seedMigratedFood(3, { name: 'Roti', foodType: 'Vegetarian', serving: { unit: 'Piece', quantity: 1 } });
+  await seedMigratedFood(1, { name: 'Chicken', foodType: 'Non-Vegetarian', servingUnit: 'Grams', servingQuantity: 100 });
+  await seedMigratedFood(2, { name: 'Milk', foodType: 'Vegetarian', servingUnit: 'ML', servingQuantity: 200 });
+  await seedMigratedFood(3, { name: 'Roti', foodType: 'Vegetarian', servingUnit: 'Piece', servingQuantity: 1 });
 
   const veg = await list('?foodType=Vegetarian');
   assert.equal(veg.body.data.pagination.total, 2);
@@ -189,15 +206,27 @@ test('the list row carries what the Food Database table shows', async () => {
   await seedMigratedFood(42, {
     name: 'Peanut Butter',
     brand: 'Pintola',
-    serving: { unit: 'Spoon', quantity: 2 },
-    nutrition: { calories: 190, fat: 16, carbs: 6, protein: 8 },
+    servingUnit: 'Spoon',
+    servingQuantity: 2,
+    calories: 190,
+    fat: 16,
+    carbs: 6,
+    protein: 8,
   });
 
   const [row] = (await list()).body.data.foods;
   assert.equal(row.name, 'Peanut Butter');
   assert.equal(row.brand, 'Pintola');
-  assert.deepEqual(row.serving, { unit: 'Spoon', quantity: 2 });
-  assert.deepEqual(row.nutrition, { calories: 190, fat: 16, carbs: 6, protein: 8 });
+  assert.deepEqual(flat(row), {
+    servingUnit: 'Spoon',
+    servingQuantity: 2,
+    calories: 190,
+    fat: 16,
+    carbs: 6,
+    protein: 8,
+  });
+  assert.equal(row.serving, undefined);
+  assert.equal(row.nutrition, undefined);
   assert.equal(row.image, null);
   assert.equal(row.legacyFoodId, 42);
   assert.ok(row.createdAt);
@@ -236,8 +265,17 @@ test('creating a food stores the new shape and records the admin', async () => {
   assert.equal(doc.name, 'Paneer Cubes');
   assert.equal(doc.foodType, 'Vegetarian');
   assert.equal(doc.brand, 'Farm Fresh');
-  assert.deepEqual({ ...doc.serving }, { unit: 'Grams', quantity: 100 });
-  assert.deepEqual({ ...doc.nutrition }, { calories: 114, fat: 2.6, carbs: 0, protein: 21 });
+  assert.deepEqual(flat(doc), {
+    servingUnit: 'Grams',
+    servingQuantity: 100,
+    calories: 114,
+    fat: 2.6,
+    carbs: 0,
+    protein: 21,
+  });
+  // The nested objects are not part of the stored shape any more.
+  assert.equal(doc.serving, undefined);
+  assert.equal(doc.nutrition, undefined);
   assert.equal(doc.status, 'active');
   assert.equal(doc.image, null);
   assert.equal(String(doc.createdBy), String(admin._id));
@@ -273,19 +311,29 @@ test('backend validation rejects what the legacy form accepted', async () => {
     [{ name: '   ' }, /name is required/],
     [{ name: undefined }, /name is required/],
     [{ foodType: 'Veg.' }, /foodType must be one of/],
-    [{ serving: { unit: 'Katori', quantity: 1 } }, /serving.unit must be one of/],
-    [{ serving: { unit: 'Grams', quantity: 0 } }, /serving.quantity must be greater than 0/],
-    [{ serving: { unit: 'Grams', quantity: -5 } }, /serving.quantity must be greater than 0/],
-    [{ nutrition: { calories: -1, fat: 0, carbs: 0, protein: 0 } }, /nutrition.calories must be at least 0/],
-    [{ nutrition: { calories: 999999, fat: 0, carbs: 0, protein: 0 } }, /nutrition.calories must be at most/],
-    [{ nutrition: { calories: 10, fat: 0, carbs: 0 } }, /nutrition.protein must be a number/],
-    [{ nutrition: { calories: 'lots', fat: 0, carbs: 0, protein: 0 } }, /nutrition.calories must be a number/],
+    [{ servingUnit: 'Katori' }, /servingUnit must be one of/],
+    [{ servingUnit: undefined }, /servingUnit must be one of/],
+    [{ servingQuantity: 0 }, /servingQuantity must be greater than 0/],
+    [{ servingQuantity: -5 }, /servingQuantity must be greater than 0/],
+    [{ servingQuantity: '100' }, /servingQuantity must be a number/],
+    [{ servingQuantity: 10_001 }, /servingQuantity must be at most/],
+    [{ calories: -1 }, /calories must be at least 0/],
+    [{ calories: 999999 }, /calories must be at most/],
+    [{ calories: 'lots' }, /calories must be a number/],
+    [{ fat: -0.5 }, /fat must be at least 0/],
+    [{ fat: 5001 }, /fat must be at most/],
+    [{ fat: undefined }, /fat must be a number/],
+    [{ carbs: -1 }, /carbs must be at least 0/],
+    [{ carbs: Number.NaN }, /carbs must be a number/],
+    [{ protein: undefined }, /protein must be a number/],
+    [{ protein: -2 }, /protein must be at least 0/],
+    [{ protein: 5001 }, /protein must be at most/],
     [{ name: 'x'.repeat(200) }, /name must be at most/],
   ];
 
   for (const [patch, expected] of cases) {
     const body = { ...validFood(), ...patch };
-    if (patch.name === undefined && 'name' in patch) delete body.name;
+    for (const [key, value] of Object.entries(patch)) if (value === undefined) delete body[key];
     const res = await create(body);
     assert.equal(res.status, 400, JSON.stringify(patch));
     assert.match(res.body.error.message, expected);
@@ -294,8 +342,8 @@ test('backend validation rejects what the legacy form accepted', async () => {
 });
 
 test('two foods may share a name: the name is not an identity', async () => {
-  const first = await create(validFood({ name: 'High Protein Paneer', serving: { unit: 'Grams', quantity: 100 } }));
-  const second = await create(validFood({ name: 'High Protein Paneer', serving: { unit: 'Bowl', quantity: 1 } }));
+  const first = await create(validFood({ name: 'High Protein Paneer', servingUnit: 'Grams', servingQuantity: 100 }));
+  const second = await create(validFood({ name: 'High Protein Paneer', servingUnit: 'Bowl', servingQuantity: 1 }));
 
   assert.equal(first.status, 201);
   assert.equal(second.status, 201);
@@ -311,15 +359,17 @@ test('PUT updates the supplied fields and leaves the rest alone', async () => {
 
   const res = await server.request('PUT', `/api/admin/foods/${id}`, {
     token: adminToken,
-    body: { name: 'Paneer Cubes (Low Fat)', nutrition: { calories: 90 } },
+    body: { name: 'Paneer Cubes (Low Fat)', calories: 90 },
   });
 
   assert.equal(res.status, 200);
   assert.equal(res.body.data.food.name, 'Paneer Cubes (Low Fat)');
-  assert.equal(res.body.data.food.nutrition.calories, 90);
+  assert.equal(res.body.data.food.calories, 90);
   // Untouched fields survive a partial nutrition update.
-  assert.equal(res.body.data.food.nutrition.protein, 21);
-  assert.equal(res.body.data.food.serving.unit, 'Grams');
+  assert.equal(res.body.data.food.protein, 21);
+  assert.equal(res.body.data.food.servingUnit, 'Grams');
+  // _id is the identity and an update never changes it.
+  assert.equal(res.body.data.food.id, id);
 });
 
 test('PATCH is accepted as well as PUT', async () => {
@@ -341,8 +391,12 @@ test('updating a migrated food preserves its legacy metadata exactly', async () 
       name: 'Toned Milk',
       brand: 'Amul',
       foodType: 'Vegetarian',
-      serving: { unit: 'ML', quantity: 200 },
-      nutrition: { calories: 120, fat: 4.5, carbs: 10, protein: 6.5 },
+      servingUnit: 'ML',
+      servingQuantity: 200,
+      calories: 120,
+      fat: 4.5,
+      carbs: 10,
+      protein: 6.5,
       notes: 'Edited in the portal',
     },
   });
@@ -353,7 +407,14 @@ test('updating a migrated food preserves its legacy metadata exactly', async () 
   assert.deepEqual({ ...doc.legacy }, { source: 'gogetfit', foodId: 123 });
   assert.equal(doc.migration.runId, 'foods-test');
   assert.equal(String(doc.updatedBy), String(admin._id));
-  assert.deepEqual({ ...doc.nutrition }, { calories: 120, fat: 4.5, carbs: 10, protein: 6.5 });
+  assert.deepEqual(flat(doc), {
+    servingUnit: 'ML',
+    servingQuantity: 200,
+    calories: 120,
+    fat: 4.5,
+    carbs: 10,
+    protein: 6.5,
+  });
 });
 
 test('legacy identity cannot be edited through the update endpoint', async () => {
@@ -384,6 +445,50 @@ test('updating an unknown food is a 404', async () => {
   assert.equal(res.status, 404);
 });
 
+test('the old nested serving / nutrition payload is refused, with the flat fields named', async () => {
+  const nested = await create({
+    name: 'Old Shape',
+    foodType: 'Vegetarian',
+    serving: { unit: 'Grams', quantity: 100 },
+    nutrition: { calories: 1, fat: 0, carbs: 0, protein: 0 },
+  });
+  assert.equal(nested.status, 400);
+  assert.match(nested.body.error.message, /serving is no longer accepted; send servingUnit, servingQuantity/);
+
+  const created = await create(validFood());
+  const id = created.body.data.food.id;
+  const update = await server.request('PUT', `/api/admin/foods/${id}`, {
+    token: adminToken,
+    body: { nutrition: { calories: 5 } },
+  });
+  assert.equal(update.status, 400);
+  assert.match(update.body.error.message, /nutrition is no longer accepted; send calories, fat, carbs, protein/);
+  assert.equal((await Food.findById(id).lean()).calories, 114);
+});
+
+test('calories, protein, carbs and fat sort on the flat fields', async () => {
+  await seedMigratedFood(1, { name: 'Low', calories: 10, protein: 30, carbs: 5, fat: 2 });
+  await seedMigratedFood(2, { name: 'High', calories: 500, protein: 1, carbs: 60, fat: 20 });
+  await seedMigratedFood(3, { name: 'Mid', calories: 120, protein: 12, carbs: 20, fat: 9 });
+
+  const names = async (qs) => (await list(qs)).body.data.foods.map((f) => f.name);
+  assert.deepEqual(await names('?sortKey=calories&sortDir=asc'), ['Low', 'Mid', 'High']);
+  assert.deepEqual(await names('?sortKey=calories&sortDir=desc'), ['High', 'Mid', 'Low']);
+  assert.deepEqual(await names('?sortKey=protein&sortDir=desc'), ['Low', 'Mid', 'High']);
+  assert.deepEqual(await names('?sortKey=carbs&sortDir=asc'), ['Low', 'Mid', 'High']);
+  assert.deepEqual(await names('?sortKey=fat&sortDir=desc'), ['High', 'Mid', 'Low']);
+});
+
+test('the unit filter combines with search on the flat servingUnit', async () => {
+  await seedMigratedFood(1, { name: 'Toned Milk', servingUnit: 'ML', servingQuantity: 200 });
+  await seedMigratedFood(2, { name: 'Milk Powder', servingUnit: 'Spoon', servingQuantity: 1 });
+  await seedMigratedFood(3, { name: 'Orange Juice', servingUnit: 'ML', servingQuantity: 250 });
+
+  const res = await list('?unit=ML&search=milk');
+  assert.deepEqual(res.body.data.foods.map((f) => f.name), ['Toned Milk']);
+  assert.equal(res.body.data.pagination.total, 1);
+});
+
 // ─── archive ─────────────────────────────────────────────────────────────────
 
 test('DELETE archives rather than removing the document', async () => {
@@ -400,7 +505,8 @@ test('DELETE archives rather than removing the document', async () => {
   assert.equal(String(doc.deletedBy), String(admin._id));
   // Legacy data survives archiving.
   assert.deepEqual({ ...doc.legacy }, { source: 'gogetfit', foodId: 900 });
-  assert.deepEqual({ ...doc.nutrition }, { calories: 100, fat: 1, carbs: 2, protein: 3 });
+  assert.equal(doc.calories, 100);
+  assert.equal(doc.protein, 3);
 });
 
 test('an archived food leaves the default list and can be restored', async () => {

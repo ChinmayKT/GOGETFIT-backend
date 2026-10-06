@@ -6,8 +6,13 @@ import mongoose from 'mongoose';
  *
  * The same food at a different portion is a different document - "Paneer, 100
  * Grams" and "Paneer, 1 Bowl" are two foods, exactly as they were in legacy.
- * Nothing here is normalised to 100g: the nutrition belongs to `serving`, and
- * reading it any other way changes its meaning.
+ * Nothing here is normalised to 100g: calories/fat/carbs/protein describe exactly
+ * `servingQuantity` x `servingUnit`, and reading them any other way changes their
+ * meaning.
+ *
+ * The business fields are flat. Foods migrated before that were stored with
+ * nested `serving` / `nutrition` objects and were flattened in place by
+ * migration/scripts/flatten-foods.js.
  *
  * Migrated foods (see docs/foods-legacy.md) carry nothing of the legacy system
  * except `legacy.foodId`. Everything else - audit columns, delete flags, the
@@ -62,34 +67,6 @@ const imageRefSchema = new mongoose.Schema(
 );
 
 /**
- * The portion this food's nutrition describes: "100 Grams", "1 Bowl", "2 Piece".
- * Both parts are required - nutrition without a portion cannot be interpreted.
- */
-const servingSchema = new mongoose.Schema(
-  {
-    unit: { type: String, enum: FOOD_UNITS, required: true },
-    /** Legacy stored this as text; here it is a number, and 0 is allowed as legacy had it. */
-    quantity: { type: Number, required: true, min: 0 },
-  },
-  { _id: false },
-);
-
-/**
- * The macros for one `serving`, exactly as entered. Required so that a food can
- * never exist without nutrition - the defect that made 11 legacy foods
- * invisible to every screen.
- */
-const nutritionSchema = new mongoose.Schema(
-  {
-    calories: { type: Number, required: true, min: 0 },
-    fat: { type: Number, required: true, min: 0 },
-    carbs: { type: Number, required: true, min: 0 },
-    protein: { type: Number, required: true, min: 0 },
-  },
-  { _id: false },
-);
-
-/**
  * The only legacy information a migrated food keeps: which system it came from
  * and its id there. It exists for traceability and for migration identity, and
  * is absent from foods created in the portal - never invented.
@@ -119,8 +96,23 @@ const foodSchema = new mongoose.Schema(
     /** Optional, as in the form: a home-made food has no brand. */
     brand: { type: String, default: null, trim: true },
 
-    serving: { type: servingSchema, required: true },
-    nutrition: { type: nutritionSchema, required: true },
+    /**
+     * The portion this food's nutrition describes: "100 Grams", "1 Bowl", "2 Piece".
+     * Both parts are required - nutrition without a portion cannot be interpreted.
+     */
+    servingUnit: { type: String, enum: FOOD_UNITS, required: true },
+    /** Legacy stored this as text; here it is a number, and 0 is allowed as legacy had it. */
+    servingQuantity: { type: Number, required: true, min: 0 },
+
+    /**
+     * The macros for one serving, exactly as entered. Required so that a food can
+     * never exist without nutrition - the defect that made 11 legacy foods
+     * invisible to every screen.
+     */
+    calories: { type: Number, required: true, min: 0 },
+    fat: { type: Number, required: true, min: 0 },
+    carbs: { type: Number, required: true, min: 0 },
+    protein: { type: Number, required: true, min: 0 },
 
     /** The form's free-text "Comments". */
     notes: { type: String, default: null, trim: true },

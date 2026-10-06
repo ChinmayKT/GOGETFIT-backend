@@ -107,10 +107,11 @@ export const transformLegacyFood = (row, { source }) => {
       name,
       foodType,
       brand: text(row.brand_name),
-      serving: { unit, quantity },
+      servingUnit: unit,
+      servingQuantity: quantity,
       // Straight from r_food_energy: not recalculated, not normalised to 100g,
       // not scaled by quantity. It describes exactly this serving.
-      nutrition,
+      ...nutrition,
       notes: text(row.comments),
       // A filename is not an image. Migrated foods start with none; the bytes
       // are not available from the legacy database.

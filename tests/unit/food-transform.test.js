@@ -37,8 +37,12 @@ test('a clean legacy row maps onto the new Food shape', () => {
     name: 'Paneer Cubes',
     foodType: 'Vegetarian',
     brand: 'Farm Fresh',
-    serving: { unit: 'Grams', quantity: 100 },
-    nutrition: { calories: 114, fat: 2.6, carbs: 0, protein: 21 },
+    servingUnit: 'Grams',
+    servingQuantity: 100,
+    calories: 114,
+    fat: 2.6,
+    carbs: 0,
+    protein: 21,
     notes: null,
     image: null,
     legacy: { source: 'gogetfit', foodId: 500 },
@@ -58,14 +62,15 @@ test('nutrition comes from r_food_energy, never from the m_food columns', () => 
   // them they must still be ignored.
   const t = transform({ calories: 9999, fat: 9999, carbs: 9999, protein: 9999 });
 
-  assert.deepEqual(t.food.nutrition, { calories: 114, fat: 2.6, carbs: 0, protein: 21 });
+  const { calories, fat, carbs, protein } = t.food;
+  assert.deepEqual({ calories, fat, carbs, protein }, { calories: 114, fat: 2.6, carbs: 0, protein: 21 });
 });
 
 test('nutrition is preserved as entered: not scaled by quantity, not normalised to 100g', () => {
   const t = transform({ qty: '250', unit: 'ML', energy_calories: 45 });
 
-  assert.equal(t.food.serving.quantity, 250);
-  assert.equal(t.food.nutrition.calories, 45);
+  assert.equal(t.food.servingQuantity, 250);
+  assert.equal(t.food.calories, 45);
 });
 
 test('food types map only where legacy is explicit', () => {
@@ -79,12 +84,12 @@ test('food types map only where legacy is explicit', () => {
 
 test('unit case is resolved, but an unknown unit is reported rather than guessed', () => {
   const lower = transform({ unit: 'grams' });
-  assert.equal(lower.food.serving.unit, 'Grams');
+  assert.equal(lower.food.servingUnit, 'Grams');
   assert.equal(lower.unitNormalised, true);
   assert.deepEqual(lower.problems, []);
 
   const unknown = transform({ unit: 'Katori' });
-  assert.equal(unknown.food.serving.unit, null);
+  assert.equal(unknown.food.servingUnit, null);
   assert.match(unknown.problems.join(), /unit "Katori" is not a supported portion unit/);
 });
 

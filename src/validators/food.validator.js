@@ -58,43 +58,15 @@ const optionalText = (value, { label, max }) => {
   return text === '' ? null : text;
 };
 
-const SERVING_FIELDS = ['unit', 'quantity'];
-
-const validateServing = (value, { partial }) => {
-  if (value === undefined && partial) return undefined;
-  if (!isPlainObject(value)) fail('serving must be an object with unit and quantity');
-  const unknown = Object.keys(value).filter((key) => !SERVING_FIELDS.includes(key));
-  if (unknown.length > 0) fail(`Unknown serving field(s): ${unknown.join(', ')}`);
-
-  const out = {};
-  if (value.unit !== undefined || !partial) out.unit = validateEnum(value.unit, FOOD_UNITS, 'serving.unit');
-  if (value.quantity !== undefined || !partial) {
-    // A portion of zero describes nothing, so nutrition attached to it cannot be read.
-    out.quantity = numberIn(value.quantity, { min: 0, max: MAX_QUANTITY, label: 'serving.quantity', exclusiveMin: true });
-  }
-  return out;
-};
+const validateServingQuantity = (value) =>
+  // A portion of zero describes nothing, so nutrition attached to it cannot be read.
+  numberIn(value, { min: 0, max: MAX_QUANTITY, label: 'servingQuantity', exclusiveMin: true });
 
 const NUTRITION_FIELDS = ['calories', 'fat', 'carbs', 'protein'];
 
-const validateNutrition = (value, { partial }) => {
-  if (value === undefined && partial) return undefined;
-  if (!isPlainObject(value)) fail(`nutrition must be an object with ${NUTRITION_FIELDS.join(', ')}`);
-  const unknown = Object.keys(value).filter((key) => !NUTRITION_FIELDS.includes(key));
-  if (unknown.length > 0) fail(`Unknown nutrition field(s): ${unknown.join(', ')}`);
-
-  const out = {};
-  for (const field of NUTRITION_FIELDS) {
-    if (value[field] === undefined && partial) continue;
-    // 0 is legitimate (water has no macros); negative never is.
-    out[field] = numberIn(value[field], {
-      min: 0,
-      max: field === 'calories' ? MAX_CALORIES : MAX_MACRO,
-      label: `nutrition.${field}`,
-    });
-  }
-  return out;
-};
+// 0 is legitimate (water has no macros); negative never is.
+const validateNutrient = (field, value) =>
+  numberIn(value, { min: 0, max: field === 'calories' ? MAX_CALORIES : MAX_MACRO, label: field });
 
 /**
  * Fields a client may never set. Rejected loudly rather than dropped silently,
@@ -119,12 +91,24 @@ const FORBIDDEN_FIELDS = [
   'image',
 ];
 
-const ALLOWED_FIELDS = ['name', 'foodType', 'brand', 'serving', 'nutrition', 'notes', 'status'];
+const ALLOWED_FIELDS = ['name', 'foodType', 'brand', 'servingUnit', 'servingQuantity', ...NUTRITION_FIELDS, 'notes', 'status'];
+
+/**
+ * The pre-flattening nested shape. Refused with a pointer to the flat fields,
+ * so a client still sending it learns what changed instead of seeing "unknown".
+ */
+const REPLACED_FIELDS = {
+  serving: 'servingUnit, servingQuantity',
+  nutrition: NUTRITION_FIELDS.join(', '),
+};
 
 const assertShape = (body) => {
   if (!isPlainObject(body)) fail('A JSON body is required');
   const forbidden = FORBIDDEN_FIELDS.filter((field) => Object.prototype.hasOwnProperty.call(body, field));
   if (forbidden.length > 0) fail(`Field(s) not accepted from the client: ${forbidden.join(', ')}`);
+  for (const [field, replacement] of Object.entries(REPLACED_FIELDS)) {
+    if (Object.prototype.hasOwnProperty.call(body, field)) fail(`${field} is no longer accepted; send ${replacement}`);
+  }
   const unknown = Object.keys(body).filter((key) => !ALLOWED_FIELDS.includes(key));
   if (unknown.length > 0) fail(`Unknown field(s): ${unknown.join(', ')}`);
 };
@@ -136,8 +120,12 @@ export const validateCreateFood = (body = {}) => {
     name: requiredText(body.name, { label: 'name', max: MAX_NAME }),
     foodType: validateEnum(body.foodType, FOOD_TYPES, 'foodType'),
     brand: optionalText(body.brand, { label: 'brand', max: MAX_BRAND }) ?? null,
-    serving: validateServing(body.serving, { partial: false }),
-    nutrition: validateNutrition(body.nutrition, { partial: false }),
+    servingUnit: validateEnum(body.servingUnit, FOOD_UNITS, 'servingUnit'),
+    servingQuantity: validateServingQuantity(body.servingQuantity),
+    calories: validateNutrient('calories', body.calories),
+    fat: validateNutrient('fat', body.fat),
+    carbs: validateNutrient('carbs', body.carbs),
+    protein: validateNutrient('protein', body.protein),
     notes: optionalText(body.notes, { label: 'notes', max: MAX_NOTES }) ?? null,
     status: body.status === undefined ? 'active' : validateEnum(body.status, FOOD_STATUSES, 'status'),
   };
@@ -157,8 +145,11 @@ export const validateUpdateFood = (body = {}) => {
   if (body.foodType !== undefined) patch.foodType = validateEnum(body.foodType, FOOD_TYPES, 'foodType');
   if (body.brand !== undefined) patch.brand = optionalText(body.brand, { label: 'brand', max: MAX_BRAND });
   if (body.notes !== undefined) patch.notes = optionalText(body.notes, { label: 'notes', max: MAX_NOTES });
-  if (body.serving !== undefined) patch.serving = validateServing(body.serving, { partial: true });
-  if (body.nutrition !== undefined) patch.nutrition = validateNutrition(body.nutrition, { partial: true });
+  if (body.servingUnit !== undefined) patch.servingUnit = validateEnum(body.servingUnit, FOOD_UNITS, 'servingUnit');
+  if (body.servingQuantity !== undefined) patch.servingQuantity = validateServingQuantity(body.servingQuantity);
+  for (const field of NUTRITION_FIELDS) {
+    if (body[field] !== undefined) patch[field] = validateNutrient(field, body[field]);
+  }
   if (body.status !== undefined) patch.status = validateEnum(body.status, FOOD_STATUSES, 'status');
 
   if (Object.keys(patch).length === 0) fail('No editable fields supplied');

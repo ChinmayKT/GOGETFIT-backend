@@ -27,10 +27,10 @@ const SORTABLE = {
   name: 'name',
   foodType: 'foodType',
   brand: 'brand',
-  calories: 'nutrition.calories',
-  protein: 'nutrition.protein',
-  carbs: 'nutrition.carbs',
-  fat: 'nutrition.fat',
+  calories: 'calories',
+  protein: 'protein',
+  carbs: 'carbs',
+  fat: 'fat',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   legacyFoodId: 'legacy.foodId',
@@ -42,22 +42,21 @@ const iso = (date) => (date ? new Date(date).toISOString() : null);
 
 const toImageRef = (image) => (image?.url ? { url: image.url, storageKey: image.storageKey ?? null } : null);
 
+/** The flat business fields that replaced the nested `serving` / `nutrition` objects. */
+export const FOOD_MEASURE_FIELDS = ['servingUnit', 'servingQuantity', 'calories', 'fat', 'carbs', 'protein'];
+
 /** Allow-listed list row: what the Food Database table shows, and nothing more. */
 export const toFoodRow = (doc) => ({
   id: String(doc._id),
   name: doc.name ?? null,
   foodType: doc.foodType ?? null,
   brand: doc.brand ?? null,
-  serving: {
-    unit: doc.serving?.unit ?? null,
-    quantity: doc.serving?.quantity ?? null,
-  },
-  nutrition: {
-    calories: doc.nutrition?.calories ?? null,
-    fat: doc.nutrition?.fat ?? null,
-    carbs: doc.nutrition?.carbs ?? null,
-    protein: doc.nutrition?.protein ?? null,
-  },
+  servingUnit: doc.servingUnit ?? null,
+  servingQuantity: doc.servingQuantity ?? null,
+  calories: doc.calories ?? null,
+  fat: doc.fat ?? null,
+  carbs: doc.carbs ?? null,
+  protein: doc.protein ?? null,
   image: toImageRef(doc.image),
   status: doc.status ?? null,
   /** Secondary admin metadata; null for a food added in the portal. */
@@ -83,7 +82,7 @@ export const buildFoodFilter = ({ search, foodType, unit, status } = {}) => {
   // resolve them by id, which is why they are never deleted.
   const filter = { status: status ?? 'active' };
   if (foodType) filter.foodType = foodType;
-  if (unit) filter['serving.unit'] = unit;
+  if (unit) filter.servingUnit = unit;
 
   const term = String(search ?? '').trim();
   if (term !== '') {
@@ -140,8 +139,12 @@ export const createFood = async (input, adminId) => {
     name: input.name,
     foodType: input.foodType,
     brand: input.brand ?? null,
-    serving: input.serving,
-    nutrition: input.nutrition,
+    servingUnit: input.servingUnit,
+    servingQuantity: input.servingQuantity,
+    calories: input.calories,
+    fat: input.fat,
+    carbs: input.carbs,
+    protein: input.protein,
     notes: input.notes ?? null,
     status: input.status ?? 'active',
     createdBy: adminId,
@@ -163,11 +166,9 @@ export const updateFood = async (id, patch, adminId) => {
   if (!current) return null;
 
   const update = { updatedBy: adminId };
-  for (const key of ['name', 'foodType', 'brand', 'notes']) {
+  for (const key of ['name', 'foodType', 'brand', 'notes', ...FOOD_MEASURE_FIELDS]) {
     if (patch[key] !== undefined) update[key] = patch[key];
   }
-  for (const [key, value] of Object.entries(patch.serving ?? {})) update[`serving.${key}`] = value;
-  for (const [key, value] of Object.entries(patch.nutrition ?? {})) update[`nutrition.${key}`] = value;
 
   if (patch.status !== undefined) {
     update.status = patch.status;

@@ -24,12 +24,12 @@ export const comparable = (f) => ({
   name: f.name ?? null,
   foodType: f.foodType ?? null,
   brand: f.brand ?? null,
-  unit: f.serving?.unit ?? null,
-  quantity: f.serving?.quantity ?? null,
-  calories: f.nutrition?.calories ?? null,
-  fat: f.nutrition?.fat ?? null,
-  carbs: f.nutrition?.carbs ?? null,
-  protein: f.nutrition?.protein ?? null,
+  servingUnit: f.servingUnit ?? null,
+  servingQuantity: f.servingQuantity ?? null,
+  calories: f.calories ?? null,
+  fat: f.fat ?? null,
+  carbs: f.carbs ?? null,
+  protein: f.protein ?? null,
   notes: f.notes ?? null,
 });
 
@@ -87,11 +87,11 @@ export const loadFoods = async (
     }
 
     summary.eligible += 1;
-    if (t.unitNormalised) summary.unitNormalised.push({ ...ref, from: t.rawUnit, to: t.food.serving.unit });
+    if (t.unitNormalised) summary.unitNormalised.push({ ...ref, from: t.rawUnit, to: t.food.servingUnit });
     if (t.zeroNutrition) summary.zeroNutrition.push({ ...ref, reason: 'calories, fat, carbs and protein are all 0' });
     if (t.legacyImageFileName) summary.withLegacyImageFileName += 1;
     summary.counts[t.food.foodType] += 1;
-    summary.unitCounts[t.food.serving.unit] = (summary.unitCounts[t.food.serving.unit] ?? 0) + 1;
+    summary.unitCounts[t.food.servingUnit] = (summary.unitCounts[t.food.servingUnit] ?? 0) + 1;
 
     try {
       const existing = await Food.findOne(
@@ -174,10 +174,10 @@ export const verifyFoods = async (rows, { source = migrationEnv.source } = {}) =
     if (typeof d.legacy?.foodId !== 'number') problems.push(`${where}: legacy.foodId missing`);
     if (!d.name || !String(d.name).trim()) problems.push(`${where}: name is empty`);
     if (!['Vegetarian', 'Non-Vegetarian'].includes(d.foodType)) problems.push(`${where}: foodType "${d.foodType}" invalid`);
-    if (!d.serving?.unit) problems.push(`${where}: serving.unit missing`);
-    if (typeof d.serving?.quantity !== 'number') problems.push(`${where}: serving.quantity missing`);
+    if (!d.servingUnit) problems.push(`${where}: servingUnit missing`);
+    if (typeof d.servingQuantity !== 'number') problems.push(`${where}: servingQuantity missing`);
     for (const field of ['calories', 'fat', 'carbs', 'protein']) {
-      if (typeof d.nutrition?.[field] !== 'number') problems.push(`${where}: nutrition.${field} missing`);
+      if (typeof d[field] !== 'number') problems.push(`${where}: ${field} missing`);
     }
     // Nothing of the legacy system may have come along except the id.
     const extraLegacy = Object.keys(d.legacy ?? {}).filter((k) => !['source', 'foodId'].includes(k));

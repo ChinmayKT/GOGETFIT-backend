@@ -28,6 +28,8 @@
     "migrate:coupons": "node migration/scripts/migrate-coupons.js",
     "migrate:foods": "node migration/scripts/migrate-foods.js",
     "migrate:foods:apply": "node migration/scripts/migrate-foods.js --apply",
+    "migrate:flatten-foods": "node migration/scripts/flatten-foods.js",
+    "migrate:flatten-foods:apply": "node migration/scripts/flatten-foods.js --apply",
     "migrate:food-images": "node migration/scripts/migrate-food-images.js",
     "migrate:food-images:apply": "node migration/scripts/migrate-food-images.js --apply",
     "migrate:workouts": "node migration/scripts/migrate-workouts.js",
