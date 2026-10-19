@@ -70,6 +70,22 @@ export class LocalStorageDriver {
     return this.toRelativePath(url);
   }
 
+  /** The public URL of the stored file [key] (see keyFor). */
+  urlFor(key) {
+    return `${this.publicBaseUrl}${this.publicPath}/${key}`;
+  }
+
+  /** Whether [key] (see keyFor) is a file this driver holds. */
+  async exists(key) {
+    const normalized = path.normalize(String(key));
+    if (normalized.startsWith('..') || path.isAbsolute(normalized)) return false;
+    try {
+      return (await fs.stat(path.join(this.rootDirectory, normalized))).isFile();
+    } catch {
+      return false;
+    }
+  }
+
   /** Maps a public URL back to a path inside the storage root, or null. */
   toRelativePath(url) {
     if (typeof url !== 'string' || url === '') return null;

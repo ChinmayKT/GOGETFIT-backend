@@ -7,6 +7,7 @@ import {
   putProfilePicture,
 } from '../controllers/user.controller.js';
 import { getMyDietPlan, getMyDietPlanHistory } from '../controllers/diet-plan.controller.js';
+import { getMyFoodLog, getMyFoodLogHistory, putMyFoodLog, putMyFoodLogMealImage } from '../controllers/food-log.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
 import {
@@ -38,6 +39,11 @@ router.get('/me', requireAuth, getMe);
 router.get('/me/diet-plan', requireAuth, getMyDietPlan);
 // The member's previous diet plans, one per logical plan. Read-only.
 router.get('/me/diet-plans/history', requireAuth, getMyDietPlanHistory);
+// The member's Intake food log: a day's log (default today), and today's submission.
+router.get('/me/food-log', requireAuth, getMyFoodLog);
+router.get('/me/food-log/history', requireAuth, getMyFoodLogHistory);
+router.put('/me/food-log', requireAuth, putMyFoodLog);
+router.put('/me/food-log/meals/:meal/image', requireAuth, rawImageBody, putMyFoodLogMealImage);
 router.patch('/me/profile', requireAuth, patchProfile);
 
 // The avatar is always editable by its owner, independent of the email lock.

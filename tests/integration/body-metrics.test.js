@@ -328,7 +328,7 @@ test("coach: reads their own client's submitted Body Metrics; never a draft; nev
   assert.equal((await coachRead(mine._id, memberToken)).status, 403);
 });
 
-test('coach client list flags bodyMetricsSubmitted per enrollment', async () => {
+test('coach enrollment history flags bodyMetricsSubmitted per enrollment', async () => {
   const done = await enroll(member, coachA, { enrollDate: new Date('2026-01-01') });
   const draft = await enroll(member, coachA, { enrollDate: new Date('2025-01-01') });
   await save(done._id, { measurements: ALL });
@@ -336,9 +336,14 @@ test('coach client list flags bodyMetricsSubmitted per enrollment', async () => 
   await save(done._id, { status: 'submitted' });
   await save(draft._id, { measurements: ALL });
 
-  const rows = (await server.request('GET', '/api/coach/clients', { token: coachAToken })).body.data.clients;
+  // The Clients list is one row per member (the current/latest cycle); every
+  // cycle's flag is in that member's enrollment history.
+  const rows = (await server.request('GET', `/api/coach/clients/${member._id}/enrollments`, { token: coachAToken })).body.data.enrollments;
   const byId = Object.fromEntries(rows.map((r) => [r.enrollmentId, r.bodyMetricsSubmitted]));
   assert.deepEqual(byId, { [String(done._id)]: true, [String(draft._id)]: false });
+  const [row] = (await server.request('GET', '/api/coach/clients', { token: coachAToken })).body.data.clients;
+  assert.equal(row.enrollmentId, String(done._id), 'the newest cycle is the row');
+  assert.equal(row.bodyMetricsSubmitted, true);
 });
 
 test('admin: submitted Body Metrics per enrollment, newest first; drafts hidden; admins only', async () => {

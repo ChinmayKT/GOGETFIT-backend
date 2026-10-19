@@ -15,6 +15,7 @@ import {
   postCoachClientDietPlan,
   putCoachClientDietPlanTargets,
 } from '../controllers/diet-plan.controller.js';
+import { getCoachClientFoodLog, getCoachClientFoodLogHistory } from '../controllers/food-log.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 
 /**
@@ -46,5 +47,8 @@ router.put('/enrollments/:enrollmentId/diet-plans/:dietPlanId/coach-targets', pu
 router.get('/enrollments/:enrollmentId/diet-plan', getCoachClientDietPlanForDay);
 // What the Create Diet Plan screen opens with: six values from the profile only (read-only).
 router.get('/enrollments/:enrollmentId/diet-plan/create-data', getEnrollmentDietPlanCreateData);
+// The client's submitted food logs, read-only: the dates, and one day.
+router.get('/enrollments/:enrollmentId/food-log/history', getCoachClientFoodLogHistory);
+router.get('/enrollments/:enrollmentId/food-log', getCoachClientFoodLog);
 
 export default router;

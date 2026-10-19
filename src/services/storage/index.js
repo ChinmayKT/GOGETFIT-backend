@@ -66,3 +66,10 @@ export const foodImageFolder = (foodId) => `foods/${foodId}`;
  * photos and the video never collide and nothing is shared between cycles.
  */
 export const bodyMetricsMediaFolder = (enrollmentId, slot) => `body-metrics/${enrollmentId}/${slot}`;
+
+/**
+ * A meal's photo in a member's food log: a folder per member, business day
+ * and meal, so a stored key itself says whose, which day and which meal it
+ * is - which is what a submission's image reference is checked against.
+ */
+export const foodLogMealImageFolder = (clientId, logDate, meal) => `food-logs/${clientId}/${logDate}/meal-${meal}`;
