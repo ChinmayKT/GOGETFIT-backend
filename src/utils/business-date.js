@@ -48,4 +48,19 @@ export const startOfBusinessDay = (value, timeZone = env.businessTimezone) => {
   return instant;
 };
 
-export default { isCalendarDay, startOfBusinessDay };
+/** The yyyy-mm-dd business day (in [timeZone]) that [instant] falls on. */
+export const businessDayOf = (instant, timeZone = env.businessTimezone) => {
+  if (!instant) return null;
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date(instant))
+      .map((x) => [x.type, x.value]),
+  );
+  return `${p.year}-${p.month}-${p.day}`;
+};
+
+/** [day] (yyyy-mm-dd) moved by [n] calendar days. */
+export const addCalendarDays = (day, n) =>
+  new Date(Date.parse(`${day}T00:00:00.000Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+export default { isCalendarDay, startOfBusinessDay, businessDayOf, addCalendarDays };

@@ -22,46 +22,14 @@ import path from 'node:path';
 import mongoose from 'mongoose';
 
 import logger from '../../src/config/logger.js';
+import { assertDevelopmentConnection as assertDevConnection, assertDevelopmentTarget as assertDevTarget } from '../config/dev-target.js';
 import { assertMigrationEnv, migrationEnv } from '../config/migration.env.js';
 import { flattenFoods, verifyFlattened } from '../loaders/food-flatten.loader.js';
 import { writeReport } from '../reports/migration-report.js';
 
-/** The development target. Overridable, but only towards another dev target. */
-const EXPECTED_HOST = process.env.MIGRATION_DEV_MONGO_HOST || 'gogetfit-dev.';
-const EXPECTED_DATABASE = process.env.MIGRATION_DEV_MONGO_DATABASE || 'gogetfit';
-
-/** Refuses anything that is not explicitly development - before any connection. */
-export const assertDevelopmentTarget = (env = process.env) => {
-  if (env.NODE_ENV !== 'development') {
-    throw new Error(`Refusing to flatten foods: NODE_ENV is "${env.NODE_ENV ?? ''}", not "development"`);
-  }
-  if (migrationEnv.allowProduction) {
-    throw new Error('Refusing to flatten foods: MIGRATION_ALLOW_PRODUCTION is set; this migration is development only');
-  }
-};
-
-/** The cluster host named in a MongoDB URI (the SRV name, not a shard's), without credentials. */
-const uriHost = (uri) => {
-  const match = /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)/.exec(String(uri ?? ''));
-  return match ? match[1] : '';
-};
-
-/**
- * Refuses a connection that is not the expected development cluster and
- * database. The cluster is read from the configured URI: the live connection
- * only reports the shard it landed on (ac-xxxx-shard-00-00...), which does not
- * carry the cluster name.
- */
-export const assertDevelopmentConnection = ({ uri = process.env.MONGODB_URI, name = mongoose.connection.name } = {}) => {
-  const host = uriHost(uri);
-  const database = name ?? '';
-  if (!host.includes(EXPECTED_HOST) || database !== EXPECTED_DATABASE) {
-    throw new Error(
-      `Refusing to flatten foods: connected to ${host}/${database}, expected *${EXPECTED_HOST}*/${EXPECTED_DATABASE}`,
-    );
-  }
-  return { host, database };
-};
+const LABEL = 'flatten foods';
+export const assertDevelopmentTarget = (env = process.env) => assertDevTarget(env, LABEL);
+export const assertDevelopmentConnection = (target) => assertDevConnection(target, LABEL);
 
 const list = (ids) => (ids.length ? ids.slice(0, 20).join(', ') + (ids.length > 20 ? ` … (+${ids.length - 20})` : '') : 'none');
 
