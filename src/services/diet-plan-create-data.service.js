@@ -27,9 +27,11 @@ export const ACTOR_ADMIN = 'admin';
 /**
  * The live enrollment [enrollmentId] for [actor] - 404 when it is malformed,
  * unknown, deleted or has no member; 403 when a coach asks for another coach's.
+ * A caller that reads the member itself passes `checkUser: false` and handles
+ * a missing member, so the user is not read twice.
  * @returns {{ _id, userId, coachId }} lean; coachId may be null.
  */
-export const resolveEnrollmentForActor = async (actor, enrollmentId) => {
+export const resolveEnrollmentForActor = async (actor, enrollmentId, { checkUser = true } = {}) => {
   let coachId = null;
   if (actor.role === ACTOR_COACH) {
     const coach = await Coach.findOne({ userId: actor.userId }, { _id: 1 }).lean();
@@ -49,11 +51,13 @@ export const resolveEnrollmentForActor = async (actor, enrollmentId) => {
   if (coachId && String(enrollment.coachId) !== String(coachId)) {
     throw forbidden(ERROR_CODES.FORBIDDEN, 'This enrollment is not one of your clients');
   }
-  if (!enrollment.userId || !(await User.exists({ _id: enrollment.userId }))) {
-    throw notFound(ERROR_CODES.USER_NOT_FOUND, 'This enrollment has no member');
+  if (!enrollment.userId || (checkUser && !(await User.exists({ _id: enrollment.userId })))) {
+    throw noMember();
   }
   return { _id: enrollment._id, userId: enrollment.userId, coachId: enrollment.coachId ?? null };
 };
+
+const noMember = () => notFound(ERROR_CODES.USER_NOT_FOUND, 'This enrollment has no member');
 
 const positive = (value) => {
   const n = typeof value === 'number' ? value : Number.parseFloat(value);
@@ -82,14 +86,16 @@ const FIELDS = ['gender', 'age', 'height', 'weight', 'activityLevel', 'goal'];
  *   exactly these six keys, each null when unknown.
  */
 export const getDietPlanCreateData = async (actor, enrollmentId) => {
-  const enrollment = await resolveEnrollmentForActor(actor, enrollmentId);
+  // The member is read once, here: this read is also the existence check.
+  const enrollment = await resolveEnrollmentForActor(actor, enrollmentId, { checkUser: false });
   const user = await User.findById(enrollment.userId, {
     'profile.gender': 1,
     'profile.dateOfBirth': 1,
     'profile.age': 1,
     'profile.fitnessProfile': 1,
   }).lean();
-  const profile = fromProfile(user?.profile);
+  if (!user) throw noMember();
+  const profile = fromProfile(user.profile);
 
   // Exactly the six keys, each null when the profile says nothing usable.
   return Object.fromEntries(FIELDS.map((f) => [f, profile[f]]));

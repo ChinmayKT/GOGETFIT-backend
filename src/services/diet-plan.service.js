@@ -12,8 +12,7 @@ import { addCalendarDays, businessDayOf, isCalendarDay, startOfBusinessDay } fro
 import { ERROR_CODES, badRequest, forbidden, notFound } from '../utils/errors.js';
 import { toFoodRow } from './food.service.js';
 import { ACTOR_ADMIN, ACTOR_COACH, resolveEnrollmentForActor } from './diet-plan-create-data.service.js';
-import { computeDietPlanTargets, round2 } from '../utils/fitness-calculations.js';
-import { DIET_PLAN_GOAL_TO_FITNESS_GOAL } from '../validators/diet-plan.validator.js';
+import { round2 } from '../utils/fitness-calculations.js';
 
 /**
  * Coach-assigned diet plans, read-only. See docs/diet-plans-design.md.
@@ -454,8 +453,8 @@ export const setCoachTargetsForCoach = async (coachUserId, enrollmentId, dietPla
  * [input] is validateCreateDietPlan's output. Every number stored is the
  * server's: each food must be an active Food in its own serving unit, and its
  * nutrition is that Food's per-serving values x qty / servingQuantity (portion
- * = qty, the actual amount); bmr, tdee and targets come from the profile values
- * with the app's own formulas. Everything is checked before the one insert, so
+ * = qty, the actual amount). bmr, tdee and targets are the coach's figures as
+ * the app sent them (validated). Everything is checked before the one insert, so
  * a refused plan writes nothing.
  */
 export const createDietPlan = async ({ actor, enrollmentId, input, now = new Date() }) => {
@@ -496,14 +495,8 @@ export const createDietPlan = async ({ actor, enrollmentId, input, now = new Dat
     }),
   }));
 
-  const { bmr, tdee, targets } = computeDietPlanTargets({
-    gender: input.gender,
-    age: input.age,
-    heightCm: input.height,
-    weightKg: input.weight,
-    activityLevel: input.activityLevel,
-    goal: DIET_PLAN_GOAL_TO_FITNESS_GOAL[input.goal],
-  });
+  // The coach's figures, exactly as the app showed and sent them.
+  const { bmr, tdee, targets } = input;
 
   // A new identity: planId is the document's own id - never a name, a date or
   // a "gogetfit:" legacy id.

@@ -12,9 +12,10 @@ import { ACTIVITY_LEVELS, GENDERS } from '../utils/fitness-calculations.js';
  *
  * Ownership is not in here: client, coach and enrollment come from the
  * enrollment and the token, never from the body (a clientId or coachId sent
- * is ignored). Neither are the numbers: bmr, tdee, targets and every food's
- * nutrition are calculated by the server (diet-plan.service createDietPlan)
- * from the profile values and the Food database, so any sent are ignored.
+ * is ignored). bmr, tdee and the four targets are the coach's figures as
+ * the app showed them, stored as sent - so every one is required and checked.
+ * Each food's nutrition is not: the server calculates it from the Food
+ * database (diet-plan.service createDietPlan), so any sent is ignored.
  */
 
 /** The diet plan goal vocabulary - what migrated plans already store. */
@@ -92,8 +93,9 @@ export const validateCreateDietPlan = (body = {}) => {
   if (name === '') fail('name is required');
   if (name.length > MAX_NAME) fail(`name must be at most ${MAX_NAME} characters`);
 
-  // The targets are calculated from these, so every one is required (the
-  // app's Create Diet Plan cannot calculate without them either).
+  // The profile the coach's figures were calculated from: every one is
+  // required (the app's Create Diet Plan cannot calculate without them).
+  if (!isPlainObject(body.targets)) fail('targets is required');
   if (!GENDERS.includes(body.gender)) fail(`gender must be one of: ${GENDERS.join(', ')}`);
   if (!ACTIVITY_LEVELS.some((a) => a.value === body.activityLevel)) {
     fail(`activityLevel must be one of: ${ACTIVITY_LEVELS.map((a) => a.value).join(', ')}`);
@@ -125,6 +127,15 @@ export const validateCreateDietPlan = (body = {}) => {
     weight: number(body.weight, 'weight', { positive: true }),
     activityLevel: body.activityLevel,
     goal: body.goal,
+    // The coach's figures, as the app showed them.
+    bmr: number(body.bmr, 'bmr', { positive: true }),
+    tdee: number(body.tdee, 'tdee', { positive: true }),
+    targets: {
+      dailyCalorieTarget: number(body.targets.dailyCalorieTarget, 'targets.dailyCalorieTarget', { positive: true }),
+      fat: number(body.targets.fat, 'targets.fat'),
+      carbs: number(body.targets.carbs, 'targets.carbs'),
+      protein: number(body.targets.protein, 'targets.protein'),
+    },
     meals,
     ...normaliseDietPlanDates(body),
   };

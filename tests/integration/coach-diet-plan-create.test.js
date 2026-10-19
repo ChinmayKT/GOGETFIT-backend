@@ -111,6 +111,7 @@ test('the name, profile snapshot, goal/bmr/tdee and targets are stored at the ro
     { gender: doc.gender, age: doc.age, height: doc.height, weight: doc.weight, activityLevel: doc.activityLevel },
     { gender: 'male', age: 32, height: 180, weight: 86, activityLevel: 'moderate' },
   );
+  // The coach's figures as the app showed them - not recalculated.
   assert.deepEqual({ goal: doc.goal, bmr: doc.bmr, tdee: doc.tdee }, { goal: 'Fat/Weight Loss', bmr: 1648, tdee: 1977.6 });
   assert.deepEqual(doc.targets, { dailyCalorieTarget: 1988, fat: 67.9, carbs: 382.1, protein: 229.3 });
   assert.equal('calories' in doc.targets, false, 'new plans use dailyCalorieTarget');
@@ -216,6 +217,13 @@ test('a missing name, no foods, missing or backwards dates are refused', async (
     body({ fromDate: '2026-10-08', toDate: '2026-10-13', selectedDates: ['2026-10-09', '2026-10-13'] }),
     body({ goal: 'Get huge' }),
     body({ targets: { fat: 1, carbs: 1, protein: 1 } }),
+    body({ targets: undefined }),
+    body({ targets: { dailyCalorieTarget: 0, fat: 1, carbs: 1, protein: 1 } }),
+    body({ targets: { dailyCalorieTarget: 1988, fat: -1, carbs: 1, protein: 1 } }),
+    body({ targets: { dailyCalorieTarget: '1988', fat: 1, carbs: 1, protein: 1 } }),
+    body({ bmr: undefined }),
+    body({ tdee: 0 }),
+    body({ bmr: 'high' }),
   ];
   for (const payload of cases) assert.equal((await create(payload)).status, 400, JSON.stringify(payload).slice(0, 80));
   assert.equal(await DietPlan.countDocuments(), 0);
