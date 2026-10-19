@@ -9,6 +9,7 @@ import Otp from './models/otp.model.js';
 import MigrationConflict from './models/migration-conflict.model.js';
 import FreeDietPlan from './models/free-diet-plan.model.js';
 import EnrolledClient from './models/enrolled-client.model.js';
+import FoodLog from './models/food-log.model.js';
 
 /**
  * Unique indexes are hard database constraints, so they are built at startup
@@ -21,6 +22,8 @@ const ensureIndexes = async () => {
     MigrationConflict.syncIndexes(),
     FreeDietPlan.syncIndexes(),
     EnrolledClient.syncIndexes(),
+    // One food log per member per day.
+    FoodLog.syncIndexes(),
   ]);
   logger.info('MongoDB indexes verified');
 };

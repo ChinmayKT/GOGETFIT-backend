@@ -5,6 +5,7 @@ import Coach from '../models/coach.model.js';
 import Coupon from '../models/coupon.model.js';
 import EnrolledClient from '../models/enrolled-client.model.js';
 import GogetfitPlan, { PLAN_CURRENCY } from '../models/gogetfit-plan.model.js';
+import { ROLE_CLIENT, mergeRoles } from '../constants/roles.js';
 import User from '../models/user.model.js';
 import { getCouponStatus } from '../utils/coupon-status.js';
 import { ERROR_CODES, badRequest, conflict, notFound } from '../utils/errors.js';
@@ -249,7 +250,7 @@ export const purchaseCartItem = async (
       }
       if (item.status !== 'active') throw badRequest(ERROR_CODES.CART_ITEM_NOT_ACTIVE, 'This cart item is no longer active');
 
-      const user = await User.findById(userId, { status: 1, profile: 1, phone: 1 }).session(session).lean();
+      const user = await User.findById(userId, { status: 1, profile: 1, phone: 1, roles: 1 }).session(session).lean();
       if (!user) throw notFound(ERROR_CODES.USER_NOT_FOUND, 'User not found');
       if (user.status !== 'active') throw badRequest(ERROR_CODES.USER_INACTIVE, `User is ${user.status ?? 'not active'}`);
 
@@ -294,6 +295,17 @@ export const purchaseCartItem = async (
         ],
         { session },
       );
+
+      // Buying a plan makes the account a client: the role is granted in the
+      // same transaction as the enrollment, so one never exists without the
+      // other. mergeRoles keeps "user" and the canonical order.
+      if (!(user.roles ?? []).includes(ROLE_CLIENT)) {
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { roles: mergeRoles(user.roles, [ROLE_CLIENT]) } },
+          { session },
+        );
+      }
 
       // Once bought, the cart item is DELETED from the database - the
       // enrollment is now the record of the purchase. Same transaction as the

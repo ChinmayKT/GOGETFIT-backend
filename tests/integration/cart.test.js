@@ -282,6 +282,8 @@ test('a successful purchase creates exactly one enrollment and empties the item 
   assert.equal(enrollments[0].payment.amount, 4999);
   // Not an admin manual enrollment.
   assert.equal(enrollments[0].source, undefined);
+  // Buying made the member a client, in the same transaction.
+  assert.deepEqual((await User.findById(member._id).lean()).roles, ['user', 'client']);
 
   // Out of the cart AND out of the database: the enrollment is the record now.
   assert.equal((await getCart()).body.data.count, 0);
@@ -362,6 +364,8 @@ test('a purchase that fails validation leaves no enrollment and does not empty t
   assert.equal(await EnrolledClient.countDocuments({}), 0);
   const item = await CartItem.findById(id).lean();
   assert.equal(item.status, 'active');
+  // No purchase, no client role.
+  assert.deepEqual((await User.findById(member._id).lean()).roles, ['user']);
 });
 
 test('one member cannot purchase another member\'s cart item', async () => {
