@@ -54,6 +54,11 @@ export const validateEnrolledClientListQuery = (query = {}) => {
 
   if (query.search !== undefined) out.search = String(query.search);
 
+  if (query.groupBy !== undefined && query.groupBy !== '') {
+    if (query.groupBy !== 'user') fail('groupBy must be user');
+    out.groupBy = 'user';
+  }
+
   if (query.sortKey !== undefined && query.sortKey !== '') {
     if (!SORT_KEYS.includes(query.sortKey)) fail(`sortKey must be one of: ${SORT_KEYS.join(', ')}`);
     out.sortKey = query.sortKey;

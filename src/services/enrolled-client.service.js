@@ -4,6 +4,7 @@ import Coach from '../models/coach.model.js';
 import Coupon from '../models/coupon.model.js';
 import EnrolledClient, { ENROLLMENT_SOURCE_ADMIN_MANUAL, enrollmentStatus } from '../models/enrolled-client.model.js';
 import GogetfitPlan from '../models/gogetfit-plan.model.js';
+import { ROLE_CLIENT, mergeRoles } from '../constants/roles.js';
 import User from '../models/user.model.js';
 import { now as clockNow } from '../utils/clock.js';
 import { getCouponStatus } from '../utils/coupon-status.js';
@@ -12,7 +13,7 @@ import { ERROR_CODES, badRequest, notFound } from '../utils/errors.js';
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_PAGE_SIZE = 25;
 
-const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Sort keys the portal may request, mapped to real paths. An arbitrary client
@@ -239,6 +240,38 @@ export const buildMatch = ({ userId, coachId, planId, couponId, status, hasStart
 };
 
 /**
+ * Orders enrollments current-first: an active one (started, end date not
+ * passed - the member app's "current", member-enrollment.service.js), then any
+ * other live one, then deleted ones; within each, the newest enrollDate first.
+ * Never by _id alone - it only breaks exact ties.
+ */
+export const currentFirstStages = (now = new Date()) => [
+  {
+    $addFields: {
+      _rank: {
+        $cond: [
+          { $eq: ['$isDeleted', true] },
+          2,
+          { $cond: [{ $and: ['$hasStarted', { $gte: ['$endDate', now] }] }, 0, 1] },
+        ],
+      },
+    },
+  },
+  { $sort: { _rank: 1, enrollDate: -1, createdAt: -1, _id: -1 } },
+];
+
+/**
+ * Collapses current-first ordered enrollments to one document per member: the
+ * member's current/latest enrollment, plus how many enrollments they have.
+ * The list's identity is the user; the other enrollments stay reachable
+ * through the per-user history.
+ */
+export const GROUP_BY_USER_STAGES = [
+  { $group: { _id: '$userId', doc: { $first: '$$ROOT' }, enrollmentCount: { $sum: 1 } } },
+  { $replaceRoot: { newRoot: { $mergeObjects: ['$doc', { enrollmentCount: '$enrollmentCount' }] } } },
+];
+
+/**
  * One page of enrollments with their related documents resolved.
  *
  * Always paginated and always capped; the search term is matched against the
@@ -278,6 +311,10 @@ export const listEnrolledClients = async (params = {}, now = new Date()) => {
     pipeline.push(...LOOKUP_STAGES);
   }
 
+  // groupBy=user: one row per member (their current/latest enrollment), so
+  // paging, the total and the sort all run over people, not purchases.
+  if (params.groupBy === 'user') pipeline.push(...currentFirstStages(now), ...GROUP_BY_USER_STAGES);
+
   pipeline.push({
     $facet: {
       rows: [{ $sort: { [sortField]: sortDir, _id: 1 } }, { $skip: (page - 1) * pageSize }, { $limit: pageSize }],
@@ -289,7 +326,9 @@ export const listEnrolledClients = async (params = {}, now = new Date()) => {
   const total = result?.total?.[0]?.count ?? 0;
 
   return {
-    rows: (result?.rows ?? []).map((doc) => toListRow(doc, now)),
+    rows: (result?.rows ?? []).map((doc) =>
+      doc.enrollmentCount === undefined ? toListRow(doc, now) : { ...toListRow(doc, now), enrollmentCount: doc.enrollmentCount },
+    ),
     total,
     page,
     pageSize,
@@ -342,7 +381,7 @@ export const createManualEnrollment = async (input, adminId, at = clockNow()) =>
   let pricing;
   try {
     await session.withTransaction(async () => {
-      const user = await User.findById(input.userId, { status: 1, profile: 1, phone: 1 }).session(session).lean();
+      const user = await User.findById(input.userId, { status: 1, profile: 1, phone: 1, roles: 1 }).session(session).lean();
       if (!user) throw notFound(ERROR_CODES.USER_NOT_FOUND, 'User not found');
       if (user.status !== 'active') throw badRequest(ERROR_CODES.USER_INACTIVE, `User is ${user.status ?? 'not active'}`);
 
@@ -411,6 +450,17 @@ export const createManualEnrollment = async (input, adminId, at = clockNow()) =>
         ],
         { session },
       );
+
+      // Buying a plan makes the account a client: the role is granted in the
+      // same transaction as the enrollment, so one never exists without the
+      // other. mergeRoles keeps "user" and the canonical order.
+      if (!(user.roles ?? []).includes(ROLE_CLIENT)) {
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { roles: mergeRoles(user.roles, [ROLE_CLIENT]) } },
+          { session },
+        );
+      }
       createdId = doc._id;
     });
   } finally {

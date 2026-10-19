@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 
 import FreeDietPlan from '../models/free-diet-plan.model.js';
-import { ERROR_CODES, conflict } from '../utils/errors.js';
+import User from '../models/user.model.js';
+import { ERROR_CODES, conflict, notFound } from '../utils/errors.js';
+import { dietTypeForFoodType, missingMatchInputs, targetCaloriesFor } from './free-diet-plan-match.service.js';
 
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_PAGE_SIZE = 25;
@@ -134,6 +136,90 @@ export const toMemberPlan = (doc) => ({
   })),
   totals: totals(doc.meals),
 });
+
+/** Readable names for the match inputs missingMatchInputs reports. */
+const MATCH_INPUT_LABELS = {
+  'profile.fitnessProfile.foodType': 'Food type',
+  'profile.fitnessProfile.goal': 'Goal',
+  'profile.fitnessProfile.bmr': 'BMR',
+  'profile.fitnessProfile.tdee': 'TDEE',
+  'profile.fitnessProfile.foodType (unrecognised value)': 'Food type (unrecognised value)',
+  'profile.fitnessProfile.goal (unrecognised value)': 'Goal (unrecognised value)',
+};
+
+const FITNESS_FIELDS = ['height', 'weight', 'bodyFatPercentage', 'activityLevel', 'foodType', 'goal', 'bmr', 'tdee'];
+
+/**
+ * Admin read: the Free Diet Plan one member received, and the figures it was
+ * chosen from. Read-only - unlike matchAndAttachPlan this never writes the
+ * pointer; it reports what is stored.
+ *
+ * Everything comes from the existing flow, nothing is recalculated here:
+ *   - BMR and TDEE are the stored profile values;
+ *   - the target is the match service's own targetCaloriesFor, and the lookup
+ *     figure is that target rounded, exactly as the match rounds it;
+ *   - "range" is the assigned template's calorie band (range.from-range.to) -
+ *     the band the target falls in when the match is made;
+ *   - what is missing is the match service's own missingMatchInputs.
+ *
+ * status:
+ *   no_fitness    - no fitness data at all
+ *   incomplete    - a match input is missing or unrecognised (see `missing`)
+ *   not_assigned  - complete profile, but no plan pointer (no template covers
+ *                   the target for this diet type)
+ *   plan_missing  - the pointer names a template that no longer exists
+ *   assigned      - the plan the member received
+ *
+ * Two queries: the user, then the one template.
+ */
+export const getUserFreeDietPlanForAdmin = async (userId) => {
+  if (!mongoose.isValidObjectId(userId)) throw notFound(ERROR_CODES.USER_NOT_FOUND, 'User not found');
+  const user = await User.findById(userId).select('profile.name profile.fitnessProfile profile.freeDietPlanId').lean();
+  if (!user) throw notFound(ERROR_CODES.USER_NOT_FOUND, 'User not found');
+
+  const stored = user.profile?.fitnessProfile ?? {};
+  const fitness = Object.fromEntries(FITNESS_FIELDS.map((k) => [k, stored[k] ?? null]));
+  const hasFitness = Object.values(fitness).some((v) => v !== null && v !== '');
+  const missing = missingMatchInputs(user).map((field) => ({ field, label: MATCH_INPUT_LABELS[field] ?? field }));
+
+  const dietType = dietTypeForFoodType(fitness.foodType);
+  const targetCalories = missing.length === 0 ? targetCaloriesFor({ bmr: fitness.bmr, tdee: fitness.tdee, goal: fitness.goal }) : null;
+  const match = {
+    dietType,
+    targetCalories: targetCalories ?? null,
+    lookupCalories: targetCalories == null ? null : Math.round(targetCalories),
+  };
+
+  const planId = user.profile?.freeDietPlanId ?? null;
+  const doc = planId ? await FreeDietPlan.findById(planId).lean() : null;
+  const plan = doc ? toPlanDetail(doc) : null;
+
+  let status;
+  if (!hasFitness) status = 'no_fitness';
+  else if (missing.length > 0) status = 'incomplete';
+  else if (!planId) status = 'not_assigned';
+  else if (!doc) status = 'plan_missing';
+  else status = 'assigned';
+
+  return {
+    user: { id: String(user._id), name: user.profile?.name ?? null },
+    status,
+    fitness,
+    missing,
+    match,
+    freeDietPlanId: planId ? String(planId) : null,
+    freeDietPlan: plan,
+    /**
+     * Whether the stored plan is the one the profile matches today: same diet
+     * type, and the lookup figure inside its band. False means the profile
+     * changed after the plan was assigned (it is re-matched on the next save).
+     */
+    planMatchesProfile:
+      plan && match.lookupCalories != null
+        ? plan.dietType === dietType && plan.range.from <= match.lookupCalories && match.lookupCalories <= plan.range.to
+        : null,
+  };
+};
 
 /** One active template for the member who is pointing at it, or null. */
 export const getPlanForMember = async (id) => {

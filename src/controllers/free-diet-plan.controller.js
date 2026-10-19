@@ -2,6 +2,7 @@ import {
   createPlan,
   deletePlan,
   getPlanById,
+  getUserFreeDietPlanForAdmin,
   listPlans,
   updatePlan,
 } from '../services/free-diet-plan.service.js';
@@ -88,6 +89,19 @@ export const deleteFreeDietPlan = async (req, res, next) => {
     if (!plan) throw planNotFound();
 
     res.status(200).json({ success: true, message: 'Free diet plan deleted', data: { plan } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/admin/users/:id/free-diet-plan - the Free Diet Plan this member
+ * received, with the profile figures it came from. Read-only.
+ */
+export const getUserFreeDietPlan = async (req, res, next) => {
+  try {
+    const result = await getUserFreeDietPlanForAdmin(req.params.id);
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
     next(error);
   }

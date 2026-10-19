@@ -2,9 +2,10 @@ import mongoose from 'mongoose';
 
 import Coach from '../models/coach.model.js';
 import EnrolledClient, { enrollmentStatus } from '../models/enrolled-client.model.js';
-import { LOOKUP_STAGES, buildMatch } from './enrolled-client.service.js';
+import { GROUP_BY_USER_STAGES, LOOKUP_STAGES, buildMatch, currentFirstStages, escapeRegex } from './enrolled-client.service.js';
+import { ERROR_CODES, notFound } from '../utils/errors.js';
 
-/** How many coaching cycles one page of the Clients tab holds. */
+/** How many clients (members) one page of the Clients tab holds. */
 export const CLIENTS_PAGE_SIZE = 20;
 export const CLIENTS_MAX_PAGE_SIZE = 100;
 
@@ -164,8 +165,15 @@ const SUBMITTED_QUESTIONNAIRE_LOOKUP = {
 };
 
 /**
- * The signed-in coach's own clients: every non-deleted enrollment assigned to
- * them, newest first, with the counts the Clients tab shows.
+ * The signed-in coach's own clients: one row per MEMBER, carrying that
+ * member's current/latest enrollment with this coach (currentFirstStages) and
+ * how many enrollments they have with this coach. Earlier cycles are reached
+ * through getClientEnrollmentsForCoachUser, never dropped.
+ *
+ * The coach's enrollments are filtered first, then grouped by userId, then
+ * searched, sorted and paged - so paging and `pagination.total` count people,
+ * not purchases. Rows are ordered by the current enrollment's enrollDate,
+ * newest first (the order the per-enrollment list had), userId breaking ties.
  *
  * The coach is resolved from the authenticated user id - a coach id is never
  * taken from the request, so a coach can only ever read their own clients.
@@ -175,46 +183,122 @@ export const getClientsForCoachUser = async (userId, params = {}, now = new Date
   const coach = await Coach.findOne({ userId }, { _id: 1 }).lean();
   if (!coach) return null;
 
-  // A coach with hundreds of cycles must not send them all down one response:
-  // the list is read a page at a time, and the sort is total so a row can
-  // never appear on two pages or fall between them.
   const page = Math.max(1, Number.parseInt(params.page, 10) || 1);
   const requested = Number.parseInt(params.pageSize, 10) || CLIENTS_PAGE_SIZE;
   const pageSize = Math.min(Math.max(1, requested), CLIENTS_MAX_PAGE_SIZE);
-  const match = { coachId: coach._id, isDeleted: { $ne: true } };
+  const term = String(params.search ?? '').trim();
 
-  const [summary, docs] = await Promise.all([
+  const pipeline = [
+    { $match: { coachId: coach._id, isDeleted: { $ne: true } } },
+    ...currentFirstStages(now),
+    ...GROUP_BY_USER_STAGES,
+  ];
+  if (term !== '') {
+    // Searched on the member, after grouping: a member matches once however
+    // many enrollments they have.
+    const rx = new RegExp(escapeRegex(term), 'i');
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'searchUser',
+          pipeline: [{ $project: { 'profile.name': 1, 'phone.normalized': 1 } }],
+        },
+      },
+      { $match: { $or: [{ 'searchUser.profile.name': rx }, { 'searchUser.phone.normalized': rx }] } },
+    );
+  }
+  pipeline.push({
+    $facet: {
+      // Sort is total (userId is unique per row), so a member can never appear
+      // on two pages or fall between them. Joins run on the page only.
+      rows: [
+        { $sort: { enrollDate: -1, userId: 1 } },
+        { $skip: (page - 1) * pageSize },
+        { $limit: pageSize },
+        ...LOOKUP_STAGES,
+        SUBMITTED_QUESTIONNAIRE_LOOKUP,
+        SUBMITTED_BODY_METRICS_LOOKUP,
+      ],
+      total: [{ $count: 'count' }],
+    },
+  });
+
+  const [summary, [result]] = await Promise.all([
     countCoachEnrollments(coach._id, now),
-    EnrolledClient.aggregate([
-      { $match: match },
-      // Sort and page BEFORE the joins, so a page costs one page of lookups
-      // rather than the whole roster's.
-      { $sort: { enrollDate: -1, _id: 1 } },
-      { $skip: (page - 1) * pageSize },
-      { $limit: pageSize },
-      ...LOOKUP_STAGES,
-      SUBMITTED_QUESTIONNAIRE_LOOKUP,
-      SUBMITTED_BODY_METRICS_LOOKUP,
-    ]),
+    EnrolledClient.aggregate(pipeline),
   ]);
 
-  const total = summary.totalEnrollments;
+  const total = result?.total?.[0]?.count ?? 0;
   return {
     summary: {
-      total,
+      // Enrollments (coaching cycles); uniqueClients counts the people.
+      total: summary.totalEnrollments,
       uniqueClients: summary.uniqueClients,
       active: summary.activeClients,
       pending: summary.pendingClients,
       ended: summary.endedClients,
     },
+    // Unique members matching the query - what the list pages over.
     pagination: {
       page,
       pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
     },
-    clients: docs.map((doc) => toWorkspaceClientRow(doc, now)),
+    clients: (result?.rows ?? []).map((doc) => ({
+      ...toWorkspaceClientRow(doc, now),
+      enrollmentCount: doc.enrollmentCount,
+    })),
   };
+};
+
+/**
+ * One member's enrollment history with the signed-in coach: every
+ * non-deleted enrollment of [clientUserId] assigned to THIS coach,
+ * current/latest first, older ones after (currentFirstStages). Enrollments the
+ * member has with other coaches are never included.
+ *
+ * Each entry has the same shape as a Clients row (so the app can open any
+ * cycle in Client Details), plus its coach and `isCurrent` (true only for the
+ * first entry, and only when it is active).
+ *
+ * Returns null when the user has no coach profile; 404 when the member has no
+ * enrollment with this coach (or the id is not a valid id).
+ */
+export const getClientEnrollmentsForCoachUser = async (userId, clientUserId, now = new Date()) => {
+  const coach = await Coach.findOne({ userId }, { _id: 1 }).lean();
+  if (!coach) return null;
+
+  const notFoundError = notFound(ERROR_CODES.ENROLLED_CLIENT_NOT_FOUND, 'This member is not one of your clients');
+  if (!mongoose.isValidObjectId(clientUserId)) throw notFoundError;
+
+  const docs = await EnrolledClient.aggregate([
+    {
+      $match: {
+        coachId: coach._id,
+        userId: new mongoose.Types.ObjectId(clientUserId),
+        isDeleted: { $ne: true },
+      },
+    },
+    ...currentFirstStages(now),
+    ...LOOKUP_STAGES,
+    SUBMITTED_QUESTIONNAIRE_LOOKUP,
+    SUBMITTED_BODY_METRICS_LOOKUP,
+  ]);
+  if (docs.length === 0) throw notFoundError;
+
+  const enrollments = docs.map((doc, index) => {
+    const row = toWorkspaceClientRow(doc, now);
+    return {
+      ...row,
+      coach: doc.coach ? { id: String(doc.coach._id), name: doc.coach.user?.profile?.name ?? null } : null,
+      isCurrent: index === 0 && row.status === 'active',
+    };
+  });
+  return { client: enrollments[0].client, enrollments };
 };
 
 /**
@@ -245,4 +329,5 @@ export default {
   getCoachDashboard,
   getCoachClients,
   getClientsForCoachUser,
+  getClientEnrollmentsForCoachUser,
 };

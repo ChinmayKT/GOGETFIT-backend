@@ -805,3 +805,114 @@ test('28. the collection is enrolledclients and holds no embedded documents', as
     assert.equal(Object.prototype.hasOwnProperty.call(doc, field), false, field);
   }
 });
+
+// ====================== CLIENTS LIST: ONE ROW PER MEMBER ======================
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+let groupedTxn = 0;
+/** One enrollment of [user], `daysAgo` enrolled; `kind` decides its state relative to now. */
+const enrollAt = async (user, plan, daysAgo, kind = 'ended', extra = {}) => {
+  groupedTxn += 1;
+  const now = Date.now();
+  const states = {
+    active: { hasStarted: true, startDate: new Date(now - DAY_MS), endDate: new Date(now + 30 * DAY_MS) },
+    ended: { hasStarted: true, startDate: new Date(now - 100 * DAY_MS), endDate: new Date(now - DAY_MS) },
+    pending: { hasStarted: false, startDate: null, endDate: null },
+  };
+  return EnrolledClient.create({
+    userId: user._id,
+    planId: plan._id,
+    enrollDate: new Date(now - daysAgo * DAY_MS),
+    ...states[kind],
+    payment: { transactionId: `pay_grouped_${groupedTxn}`, amount: 4999, currency: 'INR', status: 'Success' },
+    ...extra,
+  });
+};
+const grouped = (qs = '') =>
+  server.request('GET', `/api/admin/enrolled-clients?groupBy=user${qs}`, { token: adminToken });
+
+test('29. groupBy=user returns one row per member with their current enrollment', async () => {
+  const plan = await seedPlan(15);
+  const chethan = await seedUser(501, { name: 'Chethan Kumar' });
+  const poorvi = await seedUser(502, { name: 'Poorvi' });
+  await enrollAt(chethan, plan, 300, 'ended');
+  const current = await enrollAt(chethan, plan, 200, 'active');
+  await enrollAt(chethan, plan, 10, 'pending'); // newer, but the active one is current
+  await enrollAt(poorvi, plan, 50, 'ended');
+
+  const res = await grouped();
+
+  assert.equal(res.status, 200);
+  const rows = res.body.data.enrolledClients;
+  assert.equal(rows.length, 2);
+  assert.equal(res.body.data.pagination.total, 2, 'members, not the 4 enrollments');
+  const row = rows.find((r) => r.client.id === String(chethan._id));
+  assert.equal(row.id, String(current._id));
+  assert.equal(row.status, 'active');
+  assert.equal(row.enrollmentCount, 3);
+  assert.equal(rows.find((r) => r.client.id === String(poorvi._id)).enrollmentCount, 1);
+});
+
+test('30. groupBy=user pages over members, each exactly once', async () => {
+  const plan = await seedPlan(15);
+  for (let i = 0; i < 5; i += 1) {
+    const user = await seedUser(600 + i);
+    await enrollAt(user, plan, 100 + i, 'ended');
+    await enrollAt(user, plan, 10 + i, 'ended');
+  }
+
+  const pages = [];
+  for (let page = 1; page <= 3; page += 1) pages.push(await grouped(`&page=${page}&pageSize=2`));
+
+  assert.deepEqual(pages[0].body.data.pagination, { page: 1, pageSize: 2, total: 5, totalPages: 3 });
+  const users = pages.flatMap((p) => p.body.data.enrolledClients.map((r) => r.client.id));
+  assert.equal(users.length, 5);
+  assert.equal(new Set(users).size, 5);
+});
+
+test('31. groupBy=user search returns the member once', async () => {
+  const plan = await seedPlan(15);
+  const chethan = await seedUser(701, { name: 'Chethan Kumar' });
+  await enrollAt(chethan, plan, 100);
+  await enrollAt(chethan, plan, 20);
+  await enrollAt(await seedUser(702, { name: 'Someone Else' }), plan, 30);
+
+  const res = await grouped('&search=chethan');
+
+  assert.equal(res.body.data.pagination.total, 1);
+  assert.equal(res.body.data.enrolledClients.length, 1);
+  assert.equal(res.body.data.enrolledClients[0].client.id, String(chethan._id));
+});
+
+test('32. groupBy=user sorts by the current enrollment, deterministically', async () => {
+  const plan = await seedPlan(15);
+  const recent = await seedUser(801);
+  const older = await seedUser(802);
+  await enrollAt(recent, plan, 5);
+  await enrollAt(older, plan, 50);
+  await enrollAt(older, plan, 500);
+
+  const desc = (await grouped()).body.data.enrolledClients.map((r) => r.client.id);
+  const asc = (await grouped('&sortKey=enrollDate&sortDir=asc')).body.data.enrolledClients.map((r) => r.client.id);
+
+  assert.deepEqual(desc, [String(recent._id), String(older._id)]);
+  assert.deepEqual(asc, [String(older._id), String(recent._id)]);
+});
+
+test('33. without groupBy every enrollment is still listed, so the history stays complete', async () => {
+  const plan = await seedPlan(15);
+  const chethan = await seedUser(901);
+  await enrollAt(chethan, plan, 100);
+  await enrollAt(chethan, plan, 20);
+
+  const res = await server.request('GET', `/api/admin/enrolled-clients?userId=${chethan._id}`, { token: adminToken });
+
+  assert.equal(res.body.data.enrolledClients.length, 2);
+  assert.equal(res.body.data.enrolledClients[0].enrollmentCount, undefined);
+});
+
+test('34. an unknown groupBy is rejected', async () => {
+  const res = await server.request('GET', '/api/admin/enrolled-clients?groupBy=coach', { token: adminToken });
+
+  assert.equal(res.status, 400);
+});

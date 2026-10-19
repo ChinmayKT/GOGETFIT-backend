@@ -21,6 +21,7 @@ import {
 import {
   deleteFreeDietPlan,
   getFreeDietPlan,
+  getUserFreeDietPlan,
   getFreeDietPlans,
   patchFreeDietPlan,
   postFreeDietPlan,
@@ -62,6 +63,11 @@ import {
 import { getAdminCartItems } from '../controllers/admin-cart.controller.js';
 import { getUserQuestionnairesForAdmin } from '../controllers/questionnaire.controller.js';
 import { getUserBodyMetricsForAdmin } from '../controllers/body-metrics.controller.js';
+import {
+  getAdminEnrollmentDietPlanCreateData,
+  getUserDietPlansForAdmin,
+  postAdminEnrollmentDietPlan,
+} from '../controllers/diet-plan.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 import { rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
 
@@ -86,6 +92,14 @@ router.get('/users/search', searchUserByPhone);
 router.get('/users/:id', getAdminUserById);
 router.get('/users/:id/questionnaires', getUserQuestionnairesForAdmin);
 router.get('/users/:id/body-metrics', getUserBodyMetricsForAdmin);
+// Coach-assigned diet plans, read-only, with the day schedule the member sees.
+router.get('/users/:id/diet-plans', getUserDietPlansForAdmin);
+// Add Diet Plan: the profile values to open with, then a NEW plan for one
+// enrollment - the coach's own creation logic, client/coach from the enrollment.
+router.get('/enrollments/:enrollmentId/diet-plan/create-data', getAdminEnrollmentDietPlanCreateData);
+router.post('/enrollments/:enrollmentId/diet-plans', postAdminEnrollmentDietPlan);
+// The Free Diet Plan the member received (profile-matched template), read-only.
+router.get('/users/:id/free-diet-plan', getUserFreeDietPlan);
 router.patch('/users/:id', patchAdminUser);
 
 // Coach profiles. A coach is an existing user plus a Coach document; there is

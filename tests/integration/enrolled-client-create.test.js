@@ -345,7 +345,7 @@ test('22-25. cash, UPI, bank transfer and other; the reference is required for U
 
 // --- audit and side effects --------------------------------------------------------------
 
-test('28, 30. createdBy is the authenticated admin; the user, coach, plan and coupon are not modified', async () => {
+test('28, 30. createdBy is the authenticated admin; the user becomes a client, and nothing else about them, the coach, plan or coupon changes', async () => {
   const before = {
     user: await User.findById(member._id).lean(),
     coach: await Coach.findById(coach._id).lean(),
@@ -357,9 +357,12 @@ test('28, 30. createdBy is the authenticated admin; the user, coach, plan and co
   assert.equal(String(doc.createdBy), String(admin._id));
   assert.equal(String(doc.updatedBy), String(admin._id));
 
-  // 30. No "client" role is added: the enrollment document is what makes a client.
-  assert.deepEqual((await User.findById(member._id).lean()).roles, ['user']);
-  assert.deepEqual(await User.findById(member._id).lean(), before.user);
+  // 30. The enrolled user is granted the "client" role, in the same
+  // transaction; nothing else about the user changes.
+  const { roles, updatedAt: _u, ...after } = await User.findById(member._id).lean();
+  const { roles: _r, updatedAt: _b, ...unchanged } = before.user;
+  assert.deepEqual(roles, ['user', 'client']);
+  assert.deepEqual(after, unchanged);
   assert.deepEqual(await Coach.findById(coach._id).lean(), before.coach);
   assert.deepEqual(await GogetfitPlan.findById(plan._id).lean(), before.plan);
   assert.deepEqual(await Coupon.findById(coupons.public10._id).lean(), before.coupon);
