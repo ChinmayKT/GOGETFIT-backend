@@ -10,6 +10,8 @@ import {
 } from '../controllers/coach-workspace.controller.js';
 import { getEnrollmentBodyMetricsForCoach } from '../controllers/body-metrics.controller.js';
 import {
+  getCoachDietPlanLibrary,
+  getCoachDietPlanLibraryItem,
   getCoachClientDietPlanForDay,
   getCoachClientDietPlans,
   postCoachClientDietPlan,
@@ -47,6 +49,9 @@ router.put('/enrollments/:enrollmentId/diet-plans/:dietPlanId/coach-targets', pu
 router.get('/enrollments/:enrollmentId/diet-plan', getCoachClientDietPlanForDay);
 // What the Create Diet Plan screen opens with: six values from the profile only (read-only).
 router.get('/enrollments/:enrollmentId/diet-plan/create-data', getEnrollmentDietPlanCreateData);
+// The Diet Plan library: the coach's own plans or every coach's, and one in full.
+router.get('/diet-plans', getCoachDietPlanLibrary);
+router.get('/diet-plans/:planId', getCoachDietPlanLibraryItem);
 // The client's submitted food logs, read-only: the dates, and one day.
 router.get('/enrollments/:enrollmentId/food-log/history', getCoachClientFoodLogHistory);
 router.get('/enrollments/:enrollmentId/food-log', getCoachClientFoodLog);

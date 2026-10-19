@@ -7,6 +7,8 @@ import {
   getDietPlanHistoryForUser,
   listDietPlansForAdmin,
   setCoachTargetsForCoach,
+  getDietPlanLibraryItemForCoach,
+  listDietPlanLibraryForCoach,
 } from '../services/diet-plan.service.js';
 import { ACTOR_ADMIN, getDietPlanCreateData } from '../services/diet-plan-create-data.service.js';
 import { validateCoachTargets, validateCreateDietPlan } from '../validators/diet-plan.validator.js';
@@ -59,6 +61,29 @@ export const getMyDietPlanHistory = handle(async (req, res) => {
  * client in one of the coach's own coaching cycles: the client's History items
  * plus current and upcoming plans. No meals: open one with the day endpoint.
  */
+/**
+ * GET /api/coach/diet-plans?scope=you|all&page=&pageSize=&search= - the Diet
+ * Plan library (the signed-in coach's own plans, or every coach's), newest
+ * first, optionally narrowed to names containing `search`.
+ */
+export const getCoachDietPlanLibrary = handle(async (req, res) => {
+  const q = (k) => (typeof req.query[k] === 'string' && req.query[k] !== '' ? req.query[k] : undefined);
+  res.status(200).json({
+    success: true,
+    data: await listDietPlanLibraryForCoach(req.user._id, {
+      scope: q('scope') ?? 'you',
+      page: q('page'),
+      pageSize: q('pageSize'),
+      search: q('search'),
+    }),
+  });
+});
+
+/** GET /api/coach/diet-plans/:planId - one library plan's meals, for its preview. */
+export const getCoachDietPlanLibraryItem = handle(async (req, res) => {
+  res.status(200).json({ success: true, data: await getDietPlanLibraryItemForCoach(req.user._id, req.params.planId) });
+});
+
 export const getCoachClientDietPlans = handle(async (req, res) => {
   const result = await getDietPlanHistoryForCoach(req.user._id, req.params.enrollmentId);
   res.status(200).json({ success: true, data: result });

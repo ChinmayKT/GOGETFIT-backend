@@ -540,4 +540,124 @@ export const createDietPlanForCoach = (coachUserId, enrollmentId, input, { now }
 export const createDietPlanForAdmin = (adminUserId, enrollmentId, input, { now } = {}) =>
   createDietPlan({ actor: { userId: adminUserId, role: ACTOR_ADMIN }, enrollmentId, input, now });
 
-export default { createDietPlan, createDietPlanForAdmin, createDietPlanForCoach, listDietPlansForAdmin, getDietPlanForDay, getDietPlanHistoryForUser, getDietPlanHistoryForCoach, getDietPlanForDayForCoach, toDietPlanView, buildSchedule, contributed };
+/**
+ * The Diet Plan library a coach reuses plans from (Add Meal Plan's ALL
+ * GOGETFIT DIET PLANS): one item per logical plan (`planId` - a migrated plan
+ * is several date-run documents, an app plan one), active ones only
+ * (`status: 'archived'` is not listed), newest first by when the plan was
+ * first written - the legacy create date for a migrated plan, else its
+ * `createdAt`.
+ *
+ *  - scope 'you': written by the signed-in coach - `coachId` is their Coach
+ *    and `createdBy` is them, or null (migrated plans carry the verified
+ *    legacy author in `coachId` and no `createdBy`). A plan an admin wrote
+ *    for one of their clients is not theirs. The coach is always the token's.
+ *  - scope 'all': every coach's plans.
+ *
+ * [search] narrows either scope to plans whose name contains it (trimmed,
+ * any case, matched literally - never as a pattern), before paging and the
+ * total, so pages and counts are of the matches.
+ *
+ * Only what the list shows: no meals, no client, no enrollment. Paged by
+ * page/pageSize like the coach's client list. Read-only.
+ */
+const LIBRARY_MAX_SEARCH = 100;
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const LIBRARY_PAGE_SIZE = 20;
+const LIBRARY_MAX_PAGE_SIZE = 50;
+
+const coachOfUser = async (coachUserId) => {
+  const coach = await Coach.findOne({ userId: coachUserId }, { _id: 1 }).lean();
+  if (!coach) throw notFound(ERROR_CODES.COACH_NOT_FOUND, 'You do not have a coach profile');
+  return coach;
+};
+
+/** Coach names by Coach id, read once per page. */
+const coachNames = async (coachIds) => {
+  const ids = [...new Set(coachIds.filter(Boolean).map(String))];
+  if (!ids.length) return new Map();
+  const coaches = await Coach.find({ _id: { $in: ids } }, { userId: 1 }).populate({ path: 'userId', select: 'profile.name' }).lean();
+  return new Map(coaches.map((c) => [String(c._id), c.userId?.profile?.name ?? null]));
+};
+
+export const listDietPlanLibraryForCoach = async (coachUserId, { scope, page, pageSize, search } = {}) => {
+  if (scope !== 'you' && scope !== 'all') throw badRequest(ERROR_CODES.VALIDATION_ERROR, "scope must be 'you' or 'all'");
+  const parse = (value, fallback, label) => {
+    if (value === undefined) return fallback;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 1) throw badRequest(ERROR_CODES.VALIDATION_ERROR, `${label} must be a positive integer`);
+    return n;
+  };
+  const term = typeof search === 'string' ? search.trim() : '';
+  if (term.length > LIBRARY_MAX_SEARCH) throw badRequest(ERROR_CODES.VALIDATION_ERROR, `search must be at most ${LIBRARY_MAX_SEARCH} characters`);
+  const pageNo = parse(page, 1, 'page');
+  const size = Math.min(parse(pageSize, LIBRARY_PAGE_SIZE, 'pageSize'), LIBRARY_MAX_PAGE_SIZE);
+  const coach = await coachOfUser(coachUserId);
+
+  const match = { status: 'active' };
+  if (scope === 'you') {
+    match.coachId = coach._id;
+    match.createdBy = { $in: [new mongoose.Types.ObjectId(String(coachUserId)), null] };
+  }
+  if (term !== '') match.name = { $regex: escapeRegex(term), $options: 'i' };
+  const [result] = await DietPlan.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$planId',
+        name: { $first: '$name' },
+        coachId: { $first: '$coachId' },
+        createdOn: { $min: { $ifNull: ['$legacy.createDate', '$createdAt'] } },
+      },
+    },
+    // planId breaks ties, so pages never repeat or skip a plan.
+    { $sort: { createdOn: -1, _id: -1 } },
+    { $facet: { items: [{ $skip: (pageNo - 1) * size }, { $limit: size }], total: [{ $count: 'n' }] } },
+  ]);
+  const items = result.items;
+  const total = result.total[0]?.n ?? 0;
+  const names = await coachNames(items.map((i) => i.coachId));
+  return {
+    scope,
+    items: items.map((i) => ({
+      planId: i._id,
+      name: i.name,
+      createdOn: iso(i.createdOn),
+      coach: i.coachId ? { id: String(i.coachId), name: names.get(String(i.coachId)) ?? null } : null,
+    })),
+    pagination: { page: pageNo, pageSize: size, total, hasMore: pageNo * size < total },
+  };
+};
+
+/**
+ * One library plan in full, for its preview: its meals and foods exactly as
+ * a member's plan shows them (each food's frozen nutrition), from its most
+ * recently assigned active document - and nothing about whose plan it was
+ * (no client, enrollment or body data). Any coach may read any library plan,
+ * as the ALL list lists them all. Read-only.
+ */
+export const getDietPlanLibraryItemForCoach = async (coachUserId, planId) => {
+  await coachOfUser(coachUserId);
+  const missing = () => notFound(ERROR_CODES.DIET_PLAN_NOT_FOUND, 'Diet plan not found');
+  if (typeof planId !== 'string' || planId.trim() === '' || planId.length > 100) throw missing();
+  const docs = await DietPlan.find({ planId, status: 'active' }).sort({ assignedAt: -1 }).lean();
+  if (!docs.length) throw missing();
+  const { views } = await toViews([docs[0]], businessDayOf(new Date()), coachUserId);
+  const createdOn = docs.reduce((min, d) => {
+    const t = d.legacy?.createDate ?? d.createdAt;
+    return t && (!min || t < min) ? t : min;
+  }, null);
+  const names = await coachNames([docs[0].coachId]);
+  return {
+    dietPlan: {
+      planId,
+      name: docs[0].name,
+      createdOn: iso(createdOn),
+      coach: docs[0].coachId ? { id: String(docs[0].coachId), name: names.get(String(docs[0].coachId)) ?? null } : null,
+      meals: views[0].meals,
+    },
+  };
+};
+
+export default { listDietPlanLibraryForCoach, getDietPlanLibraryItemForCoach, createDietPlan, createDietPlanForAdmin, createDietPlanForCoach, listDietPlansForAdmin, getDietPlanForDay, getDietPlanHistoryForUser, getDietPlanHistoryForCoach, getDietPlanForDayForCoach, toDietPlanView, buildSchedule, contributed };
