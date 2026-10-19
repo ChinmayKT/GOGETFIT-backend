@@ -1,26 +1,51 @@
 import { archiveFood, createFood, getFoodById, listFoods, updateFood } from '../services/food.service.js';
 import { removeFoodImage, setFoodImage } from '../services/food-image.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
-import { validateCreateFood, validateFoodListQuery, validateUpdateFood } from '../validators/food.validator.js';
+import {
+  validateActiveFoodListQuery,
+  validateCreateFood,
+  validateFoodListQuery,
+  validateUpdateFood,
+} from '../validators/food.validator.js';
 
 const foodNotFound = () => notFound(ERROR_CODES.FOOD_NOT_FOUND, 'Food not found');
+
+/** One page of foods in the list response shape both food lists share. */
+const sendFoodList = async (params, res) => {
+  const result = await listFoods(params);
+  res.status(200).json({
+    success: true,
+    data: {
+      foods: result.rows,
+      pagination: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
+    },
+  });
+};
 
 /** GET /api/admin/foods - paginated, searched, filtered and sorted in MongoDB. */
 export const getFoods = async (req, res, next) => {
   try {
-    const result = await listFoods(validateFoodListQuery(req.query));
-    res.status(200).json({
-      success: true,
-      data: {
-        foods: result.rows,
-        pagination: {
-          page: result.page,
-          pageSize: result.pageSize,
-          total: result.total,
-          totalPages: result.totalPages,
-        },
-      },
-    });
+    await sendFoodList(validateFoodListQuery(req.query), res);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/foods - the same list, query and rows for any signed-in user,
+ * read-only and active foods only: a `status` in the query is overridden, so
+ * archived foods never leave the Admin Portal. Optional
+ * `sortBy=calories|fat|carbs|protein` and `sortOrder=asc|desc` order the
+ * whole matching catalogue in MongoDB before it is paged.
+ */
+export const getActiveFoods = async (req, res, next) => {
+  try {
+    await sendFoodList({ ...validateActiveFoodListQuery(req.query), status: 'active' }, res);
   } catch (error) {
     next(error);
   }

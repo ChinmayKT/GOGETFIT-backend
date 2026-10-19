@@ -4,7 +4,9 @@ import adminRoutes from './admin.routes.js';
 import authRoutes from './auth.routes.js';
 import coachRoutes from './coach.routes.js';
 import coachWorkspaceRoutes from './coach-workspace.routes.js';
+import foodRoutes from './food.routes.js';
 import freeDietPlanRoutes from './free-diet-plan.routes.js';
+import planRoutes from './plan.routes.js';
 import userRoutes from './user.routes.js';
 
 const router = Router();
@@ -13,6 +15,10 @@ router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 // Member-facing template reads. The admin CRUD stays under /admin.
 router.use('/free-diet-plans', freeDietPlanRoutes);
+// The Food database, read-only, any signed-in user. Food management stays under /admin.
+router.use('/foods', foodRoutes);
+// The public plans catalogue (no authentication). Plan management stays under /admin.
+router.use('/plans', planRoutes);
 // Member-facing coach discovery (read-only). Coach management stays under /admin.
 router.use('/coaches', coachRoutes);
 // The signed-in coach's own workspace (coach role only).

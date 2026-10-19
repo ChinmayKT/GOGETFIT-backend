@@ -156,6 +156,8 @@ export const validateUpdateFood = (body = {}) => {
   return patch;
 };
 
+const SORT_DIRECTIONS = ['asc', 'desc'];
+
 /**
  * List query. Page size, filters and sort are all validated here, and the sort
  * key is matched against the service's allow-list rather than passed through.
@@ -194,7 +196,28 @@ export const validateFoodListQuery = (query = {}) => {
     out.sortKey = rawSortKey;
   }
   const rawSortDir = query.sortDir ?? query.sortOrder;
-  if (rawSortDir !== undefined) out.sortDir = rawSortDir === 'desc' ? 'desc' : 'asc';
+  if (rawSortDir !== undefined && rawSortDir !== '') {
+    // Only the two directions; anything else is a 400, never a silent asc.
+    out.sortDir = validateEnum(rawSortDir, SORT_DIRECTIONS, 'sortOrder');
+  }
 
+  return out;
+};
+
+/** The nutrients a member can order the Add Food list by. */
+export const ACTIVE_FOOD_SORT_KEYS = ['calories', 'fat', 'carbs', 'protein'];
+
+/**
+ * GET /api/foods query: the list query above, with the sort limited to the
+ * four nutrients. `sortBy` alone sorts ascending; `sortOrder` without a
+ * `sortBy` is rejected (there is nothing for it to order). With neither, the
+ * default order (name A-Z) is unchanged.
+ */
+export const validateActiveFoodListQuery = (query = {}) => {
+  const out = validateFoodListQuery(query);
+  if (out.sortKey !== undefined && !ACTIVE_FOOD_SORT_KEYS.includes(out.sortKey)) {
+    fail(`sortBy must be one of: ${ACTIVE_FOOD_SORT_KEYS.join(', ')}`);
+  }
+  if (out.sortDir !== undefined && out.sortKey === undefined) fail('sortOrder needs a sortBy');
   return out;
 };

@@ -57,6 +57,8 @@ export const toFoodRow = (doc) => ({
   fat: doc.fat ?? null,
   carbs: doc.carbs ?? null,
   protein: doc.protein ?? null,
+  /** The form's free-text "Comments", shown under the food's name in the app. */
+  notes: doc.notes ?? null,
   image: toImageRef(doc.image),
   status: doc.status ?? null,
   /** Secondary admin metadata; null for a food added in the portal. */
@@ -68,7 +70,6 @@ export const toFoodRow = (doc) => ({
 /** Full food for the detail / edit screen. */
 export const toFoodDetail = (doc) => ({
   ...toFoodRow(doc),
-  notes: doc.notes ?? null,
   deletedAt: iso(doc.deletedAt),
   legacy:
     doc.legacy?.foodId != null ? { source: doc.legacy.source ?? null, foodId: doc.legacy.foodId } : null,

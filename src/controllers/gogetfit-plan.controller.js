@@ -1,6 +1,7 @@
-import { archivePlan, createPlan, getPlanById, listPlans, updatePlan } from '../services/gogetfit-plan.service.js';
+import { archivePlan, createPlan, getPlanById, listPlans, listPublicPlans, updatePlan } from '../services/gogetfit-plan.service.js';
 import { removePlanImage, setPlanImage } from '../services/gogetfit-plan-image.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
+import { validateCoachPlansQuery } from '../validators/coach.validator.js';
 import { validateCreatePlan, validatePlanListQuery, validateUpdatePlan } from '../validators/gogetfit-plan.validator.js';
 
 const planNotFound = () => notFound(ERROR_CODES.GOGETFIT_PLAN_NOT_FOUND, 'GoGetFit plan not found');
@@ -81,6 +82,25 @@ export const deleteGogetfitPlanImage = async (req, res, next) => {
     const plan = await removePlanImage(req.params.id, req.user._id);
     if (!plan) throw planNotFound();
     res.status(200).json({ success: true, message: 'Plan image removed', data: { plan } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/plans/public - the plans catalogue for anyone, signed in or not
+ * (the guest Plans tab). No token; plan facts only.
+ */
+export const getPublicPlans = async (req, res, next) => {
+  try {
+    const result = await listPublicPlans(validateCoachPlansQuery(req.query));
+    res.status(200).json({
+      success: true,
+      data: {
+        plans: result.rows,
+        pagination: { page: result.page, pageSize: result.pageSize, total: result.total, totalPages: result.totalPages },
+      },
+    });
   } catch (error) {
     next(error);
   }

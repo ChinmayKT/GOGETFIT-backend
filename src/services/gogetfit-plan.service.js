@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-import GogetfitPlan, { PLAN_CURRENCY } from '../models/gogetfit-plan.model.js';
+import GogetfitPlan, { PLAN_CURRENCY, PLAN_LEVELS } from '../models/gogetfit-plan.model.js';
 import { assertChallengeReward } from '../validators/gogetfit-plan.validator.js';
 
 export const MAX_PAGE_SIZE = 100;
@@ -165,6 +165,15 @@ export const listActivePlansForLevel = async (coachLevel, params = {}) => {
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
   };
 };
+
+/**
+ * The public catalogue: the entry tier - every ACTIVE plan of the first coach
+ * level - through exactly the query, rows and order a coach of that level
+ * shows a signed-in member (listActivePlansForLevel). The same documents, never
+ * a copy. Rows are toMemberPlan: plan facts only - no user, coach, enrollment,
+ * cart or admin field.
+ */
+export const listPublicPlans = (params = {}) => listActivePlansForLevel(PLAN_LEVELS[0], params);
 
 export const getPlanById = async (id) => {
   if (!mongoose.isValidObjectId(id)) return null;
