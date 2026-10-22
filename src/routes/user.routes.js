@@ -7,6 +7,7 @@ import {
   putProfilePicture,
 } from '../controllers/user.controller.js';
 import { getMyDietPlan, getMyDietPlanHistory } from '../controllers/diet-plan.controller.js';
+import { getMyWorkoutPlan, getMyWorkoutPlans } from '../controllers/workout-plan.controller.js';
 import { getMyFoodLog, getMyFoodLogHistory, putMyFoodLog, putMyFoodLogMealImage } from '../controllers/food-log.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
@@ -37,6 +38,10 @@ const router = Router();
 router.get('/me', requireAuth, getMe);
 // The coach-assigned diet plan the member sees on a day (default today). Read-only.
 router.get('/me/diet-plan', requireAuth, getMyDietPlan);
+// The member's workout plan on a day (default today): one plan, the newest where several share it.
+router.get('/me/workout-plan', requireAuth, getMyWorkoutPlan);
+// History: every workout plan of the signed-in member (no id parameter to tamper with).
+router.get('/me/workout-plans', requireAuth, getMyWorkoutPlans);
 // The member's previous diet plans, one per logical plan. Read-only.
 router.get('/me/diet-plans/history', requireAuth, getMyDietPlanHistory);
 // The member's Intake food log: a day's log (default today), and today's submission.

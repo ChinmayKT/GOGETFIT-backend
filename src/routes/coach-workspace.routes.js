@@ -18,6 +18,13 @@ import {
   putCoachClientDietPlanTargets,
 } from '../controllers/diet-plan.controller.js';
 import { getCoachClientFoodLog, getCoachClientFoodLogHistory } from '../controllers/food-log.controller.js';
+import { getCoachWorkouts } from '../controllers/workout.controller.js';
+import {
+  getCoachClientWorkoutPlans,
+  getCoachWorkoutPlanLibrary,
+  getCoachWorkoutPlanLibraryItem,
+  postCoachClientWorkoutPlan,
+} from '../controllers/workout-plan.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 
 /**
@@ -41,6 +48,10 @@ router.get('/enrollments/:enrollmentId/questionnaire', getEnrollmentQuestionnair
 router.get('/enrollments/:enrollmentId/body-metrics', getEnrollmentBodyMetricsForCoach);
 // The diet plans of the client in one of the coach's own enrollments (read-only).
 router.get('/enrollments/:enrollmentId/diet-plans', getCoachClientDietPlans);
+// The client's workout plans, read-only - the enrollment must be this coach's.
+router.get('/enrollments/:enrollmentId/workout-plans', getCoachClientWorkoutPlans);
+// Create Workout Plan: a NEW plan for the client, on the days chosen.
+router.post('/enrollments/:enrollmentId/workout-plans', postCoachClientWorkoutPlan);
 // A NEW diet plan for one of the coach's own enrollments (never an update).
 router.post('/enrollments/:enrollmentId/diet-plans', postCoachClientDietPlan);
 // Set Calorie Intake: the coach's daily targets on one of that client's plans.
@@ -52,6 +63,11 @@ router.get('/enrollments/:enrollmentId/diet-plan/create-data', getEnrollmentDiet
 // The Diet Plan library: the coach's own plans or every coach's, and one in full.
 router.get('/diet-plans', getCoachDietPlanLibrary);
 router.get('/diet-plans/:planId', getCoachDietPlanLibraryItem);
+// ALL GOGETFIT WORKOUT PLANS: the library (YOU / ALL, searchable) and one plan in full.
+router.get('/workout-plans', getCoachWorkoutPlanLibrary);
+router.get('/workout-plans/:planId', getCoachWorkoutPlanLibraryItem);
+// The active workouts a plan's blocks are filled from.
+router.get('/workouts', getCoachWorkouts);
 // The client's submitted food logs, read-only: the dates, and one day.
 router.get('/enrollments/:enrollmentId/food-log/history', getCoachClientFoodLogHistory);
 router.get('/enrollments/:enrollmentId/food-log', getCoachClientFoodLog);

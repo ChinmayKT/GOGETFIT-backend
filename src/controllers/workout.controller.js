@@ -5,6 +5,7 @@ import {
   listWorkouts,
   restoreWorkout,
   updateWorkout,
+  listWorkoutsForCoach,
 } from '../services/workout.service.js';
 import { removeWorkoutMedia, setWorkoutMedia } from '../services/workout-media.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
@@ -118,3 +119,20 @@ export const deleteWorkoutMedia = (slot) => async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * GET /api/coach/workouts?search=&type=&page=&pageSize= - the active
+ * workouts a coach picks from for a plan's block.
+ */
+export const getCoachWorkouts = async (req, res, next) => {
+  try {
+    const q = (k) => (typeof req.query[k] === 'string' && req.query[k] !== '' ? req.query[k] : undefined);
+    res.status(200).json({
+      success: true,
+      data: await listWorkoutsForCoach({ search: q('search'), type: q('type'), page: q('page'), pageSize: q('pageSize') }),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

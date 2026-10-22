@@ -561,20 +561,20 @@ export const createDietPlanForAdmin = (adminUserId, enrollmentId, input, { now }
  * Only what the list shows: no meals, no client, no enrollment. Paged by
  * page/pageSize like the coach's client list. Read-only.
  */
-const LIBRARY_MAX_SEARCH = 100;
-const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const LIBRARY_MAX_SEARCH = 100;
+export const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const LIBRARY_PAGE_SIZE = 20;
-const LIBRARY_MAX_PAGE_SIZE = 50;
+export const LIBRARY_PAGE_SIZE = 20;
+export const LIBRARY_MAX_PAGE_SIZE = 50;
 
-const coachOfUser = async (coachUserId) => {
+export const coachOfUser = async (coachUserId) => {
   const coach = await Coach.findOne({ userId: coachUserId }, { _id: 1 }).lean();
   if (!coach) throw notFound(ERROR_CODES.COACH_NOT_FOUND, 'You do not have a coach profile');
   return coach;
 };
 
 /** Coach names by Coach id, read once per page. */
-const coachNames = async (coachIds) => {
+export const coachNames = async (coachIds) => {
   const ids = [...new Set(coachIds.filter(Boolean).map(String))];
   if (!ids.length) return new Map();
   const coaches = await Coach.find({ _id: { $in: ids } }, { userId: 1 }).populate({ path: 'userId', select: 'profile.name' }).lean();

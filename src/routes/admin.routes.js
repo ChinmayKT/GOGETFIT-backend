@@ -63,6 +63,7 @@ import {
 import { getAdminCartItems } from '../controllers/admin-cart.controller.js';
 import { getUserQuestionnairesForAdmin } from '../controllers/questionnaire.controller.js';
 import { getUserBodyMetricsForAdmin } from '../controllers/body-metrics.controller.js';
+import { getUserWorkoutPlansForAdmin } from '../controllers/workout-plan.controller.js';
 import {
   getAdminEnrollmentDietPlanCreateData,
   getUserDietPlansForAdmin,
@@ -94,6 +95,8 @@ router.get('/users/:id/questionnaires', getUserQuestionnairesForAdmin);
 router.get('/users/:id/body-metrics', getUserBodyMetricsForAdmin);
 // Coach-assigned diet plans, read-only, with the day schedule the member sees.
 router.get('/users/:id/diet-plans', getUserDietPlansForAdmin);
+// Coach-assigned workout plans, read-only, in the member's precedence order.
+router.get('/users/:id/workout-plans', getUserWorkoutPlansForAdmin);
 // Add Diet Plan: the profile values to open with, then a NEW plan for one
 // enrollment - the coach's own creation logic, client/coach from the enrollment.
 router.get('/enrollments/:enrollmentId/diet-plan/create-data', getAdminEnrollmentDietPlanCreateData);

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
-import Workout from '../models/workout.model.js';
+import Workout, { WORKOUT_TYPES } from '../models/workout.model.js';
+import { ERROR_CODES, badRequest } from '../utils/errors.js';
 
 /**
  * The Workout master: reads and writes for the admin Workout screens.
@@ -219,3 +220,64 @@ export const restoreWorkout = async (id, adminId) => {
   ).lean();
   return doc ? getWorkoutById(doc._id) : null;
 };
+
+/**
+ * The coach's workout picker (Create Workout Plan → Add to Block): the
+ * active workouts, name A-Z, a page at a time - optionally narrowed by
+ * [search] (name, primary and secondary muscle - the admin list's own match,
+ * escaped, any case) and by [type] (one of WORKOUT_TYPES, the schema's only
+ * category). Only what the picker shows: no audit people, no legacy or
+ * migration data. `types` is the schema's category list, for its filters.
+ * Read-only.
+ */
+const COACH_PAGE_SIZE = 30;
+const COACH_MAX_PAGE_SIZE = 50;
+const COACH_MAX_SEARCH = 100;
+
+const toCoachWorkout = (doc) => ({
+  id: String(doc._id),
+  name: doc.name ?? null,
+  type: doc.type ?? null,
+  equipment: doc.equipment ?? null,
+  primaryMuscle: doc.primaryMuscle ?? null,
+  secondaryMuscle: doc.secondaryMuscle ?? null,
+  level: doc.level ?? null,
+  description: doc.description ?? null,
+  thumbnail: doc.thumbnail?.url ? { url: doc.thumbnail.url } : null,
+  hasVideo: Boolean(doc.video?.url),
+  /** The uploaded .mp4 (served from /uploads, range requests supported) - what the coach app plays. */
+  video: doc.video?.url ? { url: doc.video.url } : null,
+});
+
+export const listWorkoutsForCoach = async ({ search, type, page, pageSize } = {}) => {
+  const positive = (value, fallback, label) => {
+    if (value === undefined) return fallback;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 1) throw badRequest(ERROR_CODES.VALIDATION_ERROR, `${label} must be a positive integer`);
+    return n;
+  };
+  const pageNo = positive(page, 1, 'page');
+  const size = Math.min(positive(pageSize, COACH_PAGE_SIZE, 'pageSize'), COACH_MAX_PAGE_SIZE);
+  if (type !== undefined && !WORKOUT_TYPES.includes(type)) {
+    throw badRequest(ERROR_CODES.VALIDATION_ERROR, `type must be one of ${WORKOUT_TYPES.join(', ')}`);
+  }
+  const term = typeof search === 'string' ? search.trim() : '';
+  if (term.length > COACH_MAX_SEARCH) throw badRequest(ERROR_CODES.VALIDATION_ERROR, `search must be at most ${COACH_MAX_SEARCH} characters`);
+
+  // Active only, whatever is asked: archived workouts are not offered.
+  const filter = buildWorkoutFilter({ search: term, type, status: 'active' });
+  const [docs, total] = await Promise.all([
+    Workout.find(filter, { name: 1, type: 1, equipment: 1, primaryMuscle: 1, secondaryMuscle: 1, level: 1, description: 1, thumbnail: 1, video: 1 })
+      .sort({ name: 1, _id: 1 })
+      .skip((pageNo - 1) * size)
+      .limit(size)
+      .lean(),
+    Workout.countDocuments(filter),
+  ]);
+  return {
+    items: docs.map(toCoachWorkout),
+    types: WORKOUT_TYPES,
+    pagination: { page: pageNo, pageSize: size, total, hasMore: pageNo * size < total },
+  };
+};
+
