@@ -10,6 +10,7 @@ import MigrationConflict from './models/migration-conflict.model.js';
 import FreeDietPlan from './models/free-diet-plan.model.js';
 import EnrolledClient from './models/enrolled-client.model.js';
 import FoodLog from './models/food-log.model.js';
+import WorkoutPlan from './models/workout-plan.model.js';
 
 /**
  * Unique indexes are hard database constraints, so they are built at startup
@@ -24,6 +25,8 @@ const ensureIndexes = async () => {
     EnrolledClient.syncIndexes(),
     // One food log per member per day.
     FoodLog.syncIndexes(),
+    // The legacy-id unique index makes a migration re-run unable to duplicate a plan.
+    WorkoutPlan.syncIndexes(),
   ]);
   logger.info('MongoDB indexes verified');
 };

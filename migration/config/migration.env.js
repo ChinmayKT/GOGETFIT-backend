@@ -90,7 +90,7 @@ export const assertMigrationEnv = ({ requireMysql = true } = {}) => {
 };
 
 /** Connection details safe to log - never includes the password. */
-export const describeMysqlTarget = () =>
-  `${migrationEnv.mysql.user}@${migrationEnv.mysql.host}:${migrationEnv.mysql.port}/${migrationEnv.mysql.database}`;
+/** For logs: the database name only - never the user, host or port. */
+export const describeMysqlTarget = () => `mysql/${migrationEnv.mysql.database}`;
 
 export default migrationEnv;
