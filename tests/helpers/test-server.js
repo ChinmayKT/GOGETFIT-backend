@@ -17,6 +17,7 @@ import Questionnaire from '../../src/models/questionnaire.model.js';
 import BodyMetrics from '../../src/models/body-metrics.model.js';
 import DietPlan from '../../src/models/diet-plan.model.js';
 import FoodLog from '../../src/models/food-log.model.js';
+import DailyUpdate from '../../src/models/daily-update.model.js';
 
 /**
  * Integration tests run against a dedicated database on the configured cluster
@@ -47,6 +48,7 @@ export const connectTestDb = async () => {
     CartItem.syncIndexes(),
     Questionnaire.syncIndexes(),
     DietPlan.syncIndexes(),
+    DailyUpdate.syncIndexes(),
   ]);
 };
 
@@ -66,6 +68,7 @@ export const clearTestDb = async () => {
     BodyMetrics.deleteMany({}),
     DietPlan.deleteMany({}),
     FoodLog.deleteMany({}),
+    DailyUpdate.deleteMany({}),
   ]);
 };
 

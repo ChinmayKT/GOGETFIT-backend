@@ -18,6 +18,7 @@ import {
   putCoachClientDietPlanTargets,
 } from '../controllers/diet-plan.controller.js';
 import { getCoachClientFoodLog, getCoachClientFoodLogHistory } from '../controllers/food-log.controller.js';
+import { getCoachClientDailyUpdate, getCoachClientDailyUpdates } from '../controllers/daily-update.controller.js';
 import { getCoachWorkouts } from '../controllers/workout.controller.js';
 import {
   getCoachClientWorkoutPlans,
@@ -71,5 +72,7 @@ router.get('/workouts', getCoachWorkouts);
 // The client's submitted food logs, read-only: the dates, and one day.
 router.get('/enrollments/:enrollmentId/food-log/history', getCoachClientFoodLogHistory);
 router.get('/enrollments/:enrollmentId/food-log', getCoachClientFoodLog);
+router.get('/enrollments/:enrollmentId/daily-updates', getCoachClientDailyUpdates);
+router.get('/enrollments/:enrollmentId/daily-updates/:date', getCoachClientDailyUpdate);
 
 export default router;

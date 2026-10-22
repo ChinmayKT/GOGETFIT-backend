@@ -35,6 +35,10 @@ export const ERROR_CODES = {
   FOOD_LOG_DAY_CHANGED: 'FOOD_LOG_DAY_CHANGED',
   // Intake: the member has used all of today's food log submissions.
   INTAKE_DAILY_LIMIT_REACHED: 'INTAKE_DAILY_LIMIT_REACHED',
+  // Daily Update: the member has used all of today's submissions.
+  DAILY_UPDATE_DAILY_LIMIT_REACHED: 'DAILY_UPDATE_DAILY_LIMIT_REACHED',
+  // A Daily Update can only be submitted for today; past days are read-only.
+  DAILY_UPDATE_DAY_CLOSED: 'DAILY_UPDATE_DAY_CLOSED',
   COUPON_NOT_FOUND: 'COUPON_NOT_FOUND',
   // Cart: one active entry per member, coach and plan.
   CART_ITEM_EXISTS: 'CART_ITEM_EXISTS',

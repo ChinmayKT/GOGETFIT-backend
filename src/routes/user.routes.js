@@ -9,6 +9,7 @@ import {
 import { getMyDietPlan, getMyDietPlanHistory } from '../controllers/diet-plan.controller.js';
 import { getMyWorkoutPlan, getMyWorkoutPlans } from '../controllers/workout-plan.controller.js';
 import { getMyFoodLog, getMyFoodLogHistory, putMyFoodLog, putMyFoodLogMealImage } from '../controllers/food-log.controller.js';
+import { getMyDailyUpdate, getMyDailyUpdates, putMyDailyUpdate } from '../controllers/daily-update.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
 import {
@@ -49,6 +50,9 @@ router.get('/me/food-log', requireAuth, getMyFoodLog);
 router.get('/me/food-log/history', requireAuth, getMyFoodLogHistory);
 router.put('/me/food-log', requireAuth, putMyFoodLog);
 router.put('/me/food-log/meals/:meal/image', requireAuth, rawImageBody, putMyFoodLogMealImage);
+router.get('/me/daily-updates', requireAuth, getMyDailyUpdates);
+router.get('/me/daily-updates/:date', requireAuth, getMyDailyUpdate);
+router.put('/me/daily-updates/:date', requireAuth, putMyDailyUpdate);
 router.patch('/me/profile', requireAuth, patchProfile);
 
 // The avatar is always editable by its owner, independent of the email lock.
