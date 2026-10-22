@@ -131,7 +131,10 @@ test('replace, keep when left out, remove with null - totals never move', async 
   assert.equal(mealOf(log, 1).image.storageKey, second.storageKey);
   assert.equal(mealOf(log, 1).foods[0].qty, 200);
 
-  // Removed.
+  // Removed. A fourth submit today would hit the daily Intake limit (3, tested
+  // in intake-submission-limit.test.js); this test is about photos, so the
+  // day's count is reset first.
+  await FoodLog.updateMany({}, { $set: { submissionCount: 0 } });
   log = (await put({ meals: [{ meal: 1, image: null, foods: [food('a', rice, 200)] }, { meal: 2, foods: [food('b', whey, 1)] }] })).body.data.foodLog;
   assert.equal(mealOf(log, 1).image, null);
   assert.ok(mealOf(log, 2).image);

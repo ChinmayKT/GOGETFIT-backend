@@ -19,7 +19,8 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
  *
  *   { meals: [{ meal: 1-8, image?: { storageKey } | null,
  *               foods: [{ entryId, foodId, qty }] }],
- *     day?: 'YYYY-MM-DD', memberGoal?: { calories, fat, carbs, protein } }
+ *     day?: 'YYYY-MM-DD', memberGoal?: { calories, fat, carbs, protein },
+ *     submissionId?: string }
  *
  * `foods` was `entries` before; an older app still sending `entries` is read
  * the same way. A meal's `image` is a key from the meal-image upload
@@ -92,7 +93,16 @@ export const validateFoodLogSubmission = (body = {}) => {
     if (!isCalendarDay(body.day)) fail('day must be a YYYY-MM-DD date');
     day = body.day;
   }
-  return { meals, memberGoal, day };
+  // The app's id for this submission (one per tap of Submit): a retry sends
+  // the same id and is not counted as another of the day's submissions.
+  let submissionId = null;
+  if (body.submissionId !== undefined && body.submissionId !== null) {
+    if (typeof body.submissionId !== 'string' || body.submissionId.trim() === '' || body.submissionId.length > MAX_ENTRY_ID) {
+      fail('submissionId must be a short string');
+    }
+    submissionId = body.submissionId;
+  }
+  return { meals, memberGoal, day, submissionId };
 };
 
 export default { validateFoodLogSubmission };

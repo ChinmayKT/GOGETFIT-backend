@@ -16,6 +16,9 @@ import mongoose from 'mongoose';
 
 export const FOOD_LOG_MEALS = [1, 2, 3, 4, 5, 6, 7, 8];
 
+/** Successful Intake submissions a member may make per business day. */
+export const FOOD_LOG_DAILY_SUBMISSIONS = 3;
+
 const nonNegative = { type: Number, required: true, min: 0 };
 
 const entrySchema = new mongoose.Schema(
@@ -112,6 +115,14 @@ const foodLogSchema = new mongoose.Schema(
 
     status: { type: String, enum: ['open'], default: 'open' },
     submittedAt: { type: Date, required: true },
+    /**
+     * Successful submissions this day - never more than
+     * FOOD_LOG_DAILY_SUBMISSIONS (the save itself refuses a fourth). A log
+     * saved before the limit existed has none (read as 0).
+     */
+    submissionCount: { type: Number, min: 0 },
+    /** The app's id for the last counted submission: a retry of it is not counted again. */
+    lastSubmissionId: { type: String, default: null },
   },
   { timestamps: true, versionKey: false, collection: 'foodlogs' },
 );

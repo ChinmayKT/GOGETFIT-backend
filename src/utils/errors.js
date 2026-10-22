@@ -33,6 +33,8 @@ export const ERROR_CODES = {
   WORKOUT_PLAN_NOT_FOUND: 'WORKOUT_PLAN_NOT_FOUND',
   // A food log submitted for a day that is no longer today.
   FOOD_LOG_DAY_CHANGED: 'FOOD_LOG_DAY_CHANGED',
+  // Intake: the member has used all of today's food log submissions.
+  INTAKE_DAILY_LIMIT_REACHED: 'INTAKE_DAILY_LIMIT_REACHED',
   COUPON_NOT_FOUND: 'COUPON_NOT_FOUND',
   // Cart: one active entry per member, coach and plan.
   CART_ITEM_EXISTS: 'CART_ITEM_EXISTS',

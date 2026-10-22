@@ -3,10 +3,10 @@ import mongoose from 'mongoose';
 import env from '../config/env.js';
 import DietPlan from '../models/diet-plan.model.js';
 import Food from '../models/food.model.js';
-import FoodLog, { FOOD_LOG_MEALS, mealFoodsOf } from '../models/food-log.model.js';
+import FoodLog, { FOOD_LOG_DAILY_SUBMISSIONS, FOOD_LOG_MEALS, mealFoodsOf } from '../models/food-log.model.js';
 import User from '../models/user.model.js';
 import { businessDayOf, isCalendarDay, startOfBusinessDay } from '../utils/business-date.js';
-import { ERROR_CODES, badRequest, conflict, notFound } from '../utils/errors.js';
+import { ERROR_CODES, badRequest, conflict, notFound, tooManyRequests } from '../utils/errors.js';
 import { assertValidImage } from '../utils/image.js';
 import { clientOfCoachEnrollment, contributed, effectiveTargetsOf } from './diet-plan.service.js';
 import { toFoodRow } from './food.service.js';
@@ -25,6 +25,18 @@ import { foodLogMealImageFolder, getStorage } from './storage/index.js';
 const NUTRIENTS = ['calories', 'fat', 'carbs', 'protein'];
 const round1 = (n) => Math.round(n * 10) / 10;
 const DUPLICATE_KEY = 11000;
+
+/** A day's submissions so far, out of the daily limit (0 used with no log). */
+const submissionsOf = (doc) => {
+  const used = Math.min(doc?.submissionCount ?? 0, FOOD_LOG_DAILY_SUBMISSIONS);
+  return { used, limit: FOOD_LOG_DAILY_SUBMISSIONS, remaining: FOOD_LOG_DAILY_SUBMISSIONS - used };
+};
+
+const limitReached = () =>
+  tooManyRequests(
+    ERROR_CODES.INTAKE_DAILY_LIMIT_REACHED,
+    "You've reached your daily Intake submission limit. You can submit again tomorrow.",
+  );
 
 const findUser = async (userId) => {
   if (!mongoose.isValidObjectId(userId)) throw notFound(ERROR_CODES.USER_NOT_FOUND, 'User not found');
@@ -176,7 +188,13 @@ export const getFoodLogForDay = async (userId, { date, now = new Date() } = {}) 
   if (!isCalendarDay(day)) throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'date must be a valid YYYY-MM-DD day');
   const user = await findUser(userId);
   const doc = await FoodLog.findOne({ clientId: user._id, logDate: day }).lean();
-  return { date: day, today, timezone: env.businessTimezone, foodLog: await viewOf(doc) };
+  return {
+    date: day,
+    today,
+    timezone: env.businessTimezone,
+    foodLog: await viewOf(doc),
+    submissions: submissionsOf(doc),
+  };
 };
 
 /**
@@ -203,6 +221,19 @@ export const submitFoodLog = async (userId, input, { now = new Date() } = {}) =>
     throw conflict(ERROR_CODES.FOOD_LOG_DAY_CHANGED, 'A new day has started - your food log was refreshed for today');
   }
   const existing = await FoodLog.findOne({ clientId: user._id, logDate }).lean();
+  const result = async (doc) => ({
+    date: logDate,
+    timezone: env.businessTimezone,
+    foodLog: await viewOf(doc),
+    submissions: submissionsOf(doc),
+  });
+  const id = input.submissionId ?? null;
+  // A retry of the submission already saved (its response was lost): the
+  // saved log, not counted again.
+  if (id && existing?.lastSubmissionId === id) return result(existing);
+  // At most FOOD_LOG_DAILY_SUBMISSIONS a day. Refused here before any work;
+  // the save below refuses it again, atomically.
+  if ((existing?.submissionCount ?? 0) >= FOOD_LOG_DAILY_SUBMISSIONS) throw limitReached();
 
   const sent = input.meals.flatMap((m) => m.foods);
   if (sent.length === 0 && !existing) {
@@ -307,23 +338,40 @@ export const submitFoodLog = async (userId, input, { now = new Date() } = {}) =>
     meals,
     submittedAt: now,
   };
+  // Counted in the same atomic write: it only matches a log still under the
+  // limit (and not already holding this submission), so concurrent requests
+  // can never take a fourth. With no match the upsert tries to insert, which
+  // the unique { clientId, logDate } index refuses - read below.
   const save = () =>
     FoodLog.findOneAndUpdate(
-      { clientId: user._id, logDate },
-      { $set: set, $setOnInsert: { clientId: user._id, logDate, status: 'open', ...snapshot } },
+      {
+        clientId: user._id,
+        logDate,
+        submissionCount: { $not: { $gte: FOOD_LOG_DAILY_SUBMISSIONS } },
+        ...(id ? { lastSubmissionId: { $ne: id } } : {}),
+      },
+      {
+        $set: { ...set, lastSubmissionId: id },
+        $inc: { submissionCount: 1 },
+        $setOnInsert: { clientId: user._id, logDate, status: 'open', ...snapshot },
+      },
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
     ).lean();
 
-  let doc;
-  try {
-    doc = await save();
-  } catch (error) {
-    // Two first submissions racing: the unique index lets one insert win; the
-    // other becomes an update of that same document.
-    if (error?.code !== DUPLICATE_KEY) throw error;
-    doc = await save();
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await result(await save());
+    } catch (error) {
+      if (error?.code !== DUPLICATE_KEY) throw error;
+      // The day's log exists but did not match: this submission already
+      // counted (a concurrent retry), the limit is reached - or two first
+      // submissions raced and the other inserted it, so try again as an update.
+      const current = await FoodLog.findOne({ clientId: user._id, logDate }).lean();
+      if (id && current?.lastSubmissionId === id) return result(current);
+      if ((current?.submissionCount ?? 0) >= FOOD_LOG_DAILY_SUBMISSIONS) throw limitReached();
+      if (attempt >= 2) throw error;
+    }
   }
-  return { date: logDate, timezone: env.businessTimezone, foodLog: await viewOf(doc) };
 };
 
 const HISTORY_DEFAULT_LIMIT = 20;
