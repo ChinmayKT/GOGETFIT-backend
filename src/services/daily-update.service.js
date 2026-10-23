@@ -9,6 +9,7 @@ import { businessDayOf, isCalendarDay } from '../utils/business-date.js';
 import { ERROR_CODES, badRequest, conflict, notFound, tooManyRequests } from '../utils/errors.js';
 import { clientOfCoachEnrollment } from './diet-plan.service.js';
 import { listMemberEnrollments } from './member-enrollment.service.js';
+import { rewardDailyUpdateSafely } from './rewards.service.js';
 import { CALORIE_OUT_PARTS } from '../validators/daily-update.validator.js';
 
 /**
@@ -138,7 +139,16 @@ export const submitDailyUpdate = async (userId, date, input, { now = new Date() 
   }
 
   const existing = await DailyUpdate.findOne({ clientId: user._id, date }).lean();
-  const result = (doc) => ({ date, today, timezone: env.businessTimezone, dailyUpdate: toView(doc), submissions: submissionsOf(doc) });
+  // Every successful answer - a retry's too - carries the Streak and Coins
+  // as they now stand; a day is rewarded once, whichever request gets there.
+  const result = async (doc) => ({
+    date,
+    today,
+    timezone: env.businessTimezone,
+    dailyUpdate: toView(doc),
+    submissions: submissionsOf(doc),
+    rewards: await rewardDailyUpdateSafely({ userId: user._id, dailyUpdateId: doc._id, date, now }),
+  });
   const id = input.submissionId ?? null;
   // A retry of the submission already saved (its response was lost): the
   // saved record, not counted again.
@@ -181,7 +191,7 @@ export const submitDailyUpdate = async (userId, date, input, { now = new Date() 
 
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return result(await save());
+      return await result(await save());
     } catch (error) {
       if (error?.code !== DUPLICATE_KEY) throw error;
       // The day's record exists but did not match: this submission already

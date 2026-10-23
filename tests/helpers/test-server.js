@@ -18,6 +18,8 @@ import BodyMetrics from '../../src/models/body-metrics.model.js';
 import DietPlan from '../../src/models/diet-plan.model.js';
 import FoodLog from '../../src/models/food-log.model.js';
 import DailyUpdate from '../../src/models/daily-update.model.js';
+import GoGetFitCoins from '../../src/models/gogetfit-coins.model.js';
+import Streak from '../../src/models/streak.model.js';
 
 /**
  * Integration tests run against a dedicated database on the configured cluster
@@ -49,6 +51,8 @@ export const connectTestDb = async () => {
     Questionnaire.syncIndexes(),
     DietPlan.syncIndexes(),
     DailyUpdate.syncIndexes(),
+    Streak.syncIndexes(),
+    GoGetFitCoins.syncIndexes(),
   ]);
 };
 
@@ -69,6 +73,8 @@ export const clearTestDb = async () => {
     DietPlan.deleteMany({}),
     FoodLog.deleteMany({}),
     DailyUpdate.deleteMany({}),
+    Streak.deleteMany({}),
+    GoGetFitCoins.deleteMany({}),
   ]);
 };
 

@@ -5,6 +5,7 @@ import {
   getDailyUpdateHistoryForCoach,
   submitDailyUpdate,
 } from '../services/daily-update.service.js';
+import { getRewards } from '../services/rewards.service.js';
 import { validateDailyUpdateSubmission } from '../validators/daily-update.validator.js';
 
 /**
@@ -39,6 +40,11 @@ export const getMyDailyUpdate = handle(async (req, res) => {
 export const putMyDailyUpdate = handle(async (req, res) => {
   const input = validateDailyUpdateSubmission(req.body);
   res.status(200).json({ success: true, data: await submitDailyUpdate(req.user._id, req.params.date, input) });
+});
+
+/** GET /api/users/me/rewards - the member's GoGetFit Streak and Coins, as stored. */
+export const getMyRewards = handle(async (req, res) => {
+  res.status(200).json({ success: true, data: { rewards: await getRewards(req.user._id) } });
 });
 
 /** GET /api/coach/enrollments/:enrollmentId/daily-updates?limit=&cursor= - the client's saved days. */

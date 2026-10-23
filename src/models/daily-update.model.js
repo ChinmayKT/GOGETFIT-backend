@@ -82,6 +82,12 @@ const dailyUpdateSchema = new mongoose.Schema(
     submissionCount: { type: Number, min: 0 },
     /** The app's id for the last counted submission: a retry of it is not counted again. */
     lastSubmissionId: { type: String, default: null },
+    /**
+     * When this day earned its Streak day and GoGetFit Coins - set in the same
+     * transaction as the reward, so a day is rewarded at most once. Null: not
+     * rewarded (yet, or not a plan day).
+     */
+    rewardedAt: { type: Date, default: null },
   },
   { timestamps: true, versionKey: false },
 );
