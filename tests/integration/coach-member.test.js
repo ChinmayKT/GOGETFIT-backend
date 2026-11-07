@@ -46,7 +46,7 @@ const seedCoach = async ({ name, status = 'active', userStatus = 'active', creat
   const user = await seedUser({ name, roles: ['user', 'coach'], status: userStatus, profilePicture: USER_AVATAR });
   const coach = await Coach.create({
     userId: user._id,
-    profile: { level: 'LEVEL 2', specialization: 'Fat loss', description: 'Strength coach.', languages: ['English'], instagram: 'https://instagram.com/c', transformations: 12, availableSlots: 4, ...pictures },
+    profile: { level: 'LEVEL 2', specialization: 'Fat loss', description: 'Strength coach.', languages: ['English'], instagram: 'https://instagram.com/c', transformations: 12, monthlySlots: 4, ...pictures },
     status,
     ...(createdAt ? { createdAt } : {}),
   });
@@ -91,7 +91,10 @@ test('an authenticated member can list active coaches in the member shape', asyn
   assert.deepEqual(row.profile.coverPicture, COACH_COVER);
   assert.equal(row.profile.level, 'LEVEL 2');
   assert.equal(row.profile.transformations, 12);
+  // Released slots, capped by the month; the capacity itself is never exposed.
   assert.equal(row.profile.availableSlots, 4);
+  assert.equal(row.profile.slotStatus, 'available');
+  assert.equal('monthlySlots' in row.profile, false);
 });
 
 test('the member shape carries the coach contact channels but never the user avatar or admin fields', async () => {

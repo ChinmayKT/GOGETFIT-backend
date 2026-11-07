@@ -40,7 +40,7 @@ const validProfile = (overrides = {}) => ({
   languages: ['English', 'Kannada'],
   instagram: 'https://instagram.com/asha',
   transformations: 12,
-  availableSlots: 8,
+  monthlySlots: 8,
   ...overrides,
 });
 
@@ -158,7 +158,7 @@ test('5-7, 11-12, 17. creating a coach links the user, grants the role and saves
     instagram: 'https://instagram.com/asha',
     linkedin: null,
     transformations: 12,
-    availableSlots: 8,
+    monthlySlots: 8,
   });
 
   // Verified in MongoDB, not just in the response.
@@ -235,7 +235,8 @@ test('16. missing or invalid coach fields are rejected', async () => {
   const cases = [
     { profile: { specialization: 'x' }, message: /level is required/ },
     { profile: validProfile({ level: 'LEVEL 9' }), message: /level must be one of/ },
-    { profile: validProfile({ availableSlots: -1 }), message: /availableSlots/ },
+    { profile: validProfile({ monthlySlots: -1 }), message: /monthlySlots/ },
+    { profile: validProfile({ monthlySlots: 1.5 }), message: /monthlySlots/ },
     { profile: validProfile({ transformations: 1.5 }), message: /transformations/ },
     { profile: validProfile({ instagram: 'javascript:alert(1)' }), message: /instagram/ },
     { profile: validProfile({ description: 'x'.repeat(2001) }), message: /description/ },

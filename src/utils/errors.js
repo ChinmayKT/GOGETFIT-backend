@@ -60,6 +60,7 @@ export const ERROR_CODES = {
   USER_INACTIVE: 'USER_INACTIVE',
   GOGETFIT_PLAN_INACTIVE: 'GOGETFIT_PLAN_INACTIVE',
   COACH_INACTIVE: 'COACH_INACTIVE',
+  COACH_FULLY_BOOKED: 'COACH_FULLY_BOOKED',
   // The plan is not one the chosen coach offers (plan level != coach level).
   PLAN_NOT_OFFERED_BY_COACH: 'PLAN_NOT_OFFERED_BY_COACH',
   // Not within its validity dates today (expired or not yet started).

@@ -94,7 +94,7 @@ test('counts the signed-in coach\'s enrollments: total, active, pending; attenti
 
   const res = await dashboard();
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.deepEqual(res.body.data, { totalEnrollments: 4, activeClients: 2, pendingClients: 1, attention: 0 });
+  assert.deepEqual(res.body.data, { totalEnrollments: 4, activeClients: 2, pendingClients: 1, attention: 0, remainingMonthlySlots: null });
 });
 
 test('an ended enrollment counts in the total but not as active or pending', async () => {
@@ -108,7 +108,7 @@ test('an ended enrollment counts in the total but not as active or pending', asy
 test('a not-started enrollment is pending, not active', async () => {
   await enroll(coachA, 'pending');
   const { data } = (await dashboard()).body;
-  assert.deepEqual(data, { totalEnrollments: 1, activeClients: 0, pendingClients: 1, attention: 0 });
+  assert.deepEqual(data, { totalEnrollments: 1, activeClients: 0, pendingClients: 1, attention: 0, remainingMonthlySlots: null });
 });
 
 test('a not-started enrollment whose end date already passed is not pending', async () => {
@@ -124,7 +124,7 @@ test('deleted enrollments are excluded from every count', async () => {
   await enroll(coachA, 'deletedPending');
   await enroll(coachA, 'active');
   const { data } = (await dashboard()).body;
-  assert.deepEqual(data, { totalEnrollments: 1, activeClients: 1, pendingClients: 0, attention: 0 });
+  assert.deepEqual(data, { totalEnrollments: 1, activeClients: 1, pendingClients: 0, attention: 0, remainingMonthlySlots: null });
 });
 
 test("another coach's enrollments are never included - and a coachId in the request is ignored", async () => {
@@ -133,7 +133,7 @@ test("another coach's enrollments are never included - and a coachId in the requ
   await enroll(coachA, 'pending');
 
   const own = (await dashboard()).body.data;
-  assert.deepEqual(own, { totalEnrollments: 1, activeClients: 0, pendingClients: 1, attention: 0 });
+  assert.deepEqual(own, { totalEnrollments: 1, activeClients: 0, pendingClients: 1, attention: 0, remainingMonthlySlots: null });
 
   // Asking for coach B's id changes nothing: identity comes from the token.
   const spoofed = (await dashboard(coachAToken, `?coachId=${coachB._id}`)).body.data;
@@ -159,6 +159,16 @@ test('a user with the coach role but no coach profile gets a clear 404', async (
 
 test('a coach with no enrollments sees zeros', async () => {
   const res = await dashboard();
-  assert.deepEqual(res.body.data, { totalEnrollments: 0, activeClients: 0, pendingClients: 0, attention: 0 });
+  assert.deepEqual(res.body.data, { totalEnrollments: 0, activeClients: 0, pendingClients: 0, attention: 0, remainingMonthlySlots: null });
   assert.ok(mongoose.isValidObjectId(String(coachA._id)));
+});
+
+test('the coach sees the month\'s remaining slots, floored at 0 when capacity is cut below bookings', async () => {
+  await Coach.updateOne({ _id: coachA._id }, { $set: { 'profile.monthlySlots': 50 } });
+  const { totalEnrollments } = (await dashboard()).body.data;
+  await EnrolledClient.updateMany({ coachId: coachA._id }, { $set: { enrollDate: new Date() } });
+  assert.equal((await dashboard()).body.data.remainingMonthlySlots, 50 - totalEnrollments);
+
+  await Coach.updateOne({ _id: coachA._id }, { $set: { 'profile.monthlySlots': 0 } });
+  assert.equal((await dashboard()).body.data.remainingMonthlySlots, 0);
 });

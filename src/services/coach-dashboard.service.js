@@ -4,6 +4,7 @@ import Coach from '../models/coach.model.js';
 import EnrolledClient, { enrollmentStatus } from '../models/enrolled-client.model.js';
 import { GROUP_BY_USER_STAGES, LOOKUP_STAGES, buildMatch, currentFirstStages, escapeRegex } from './enrolled-client.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
+import { getCoachCapacity } from './coach-capacity.service.js';
 
 /** How many clients (members) one page of the Clients tab holds. */
 export const CLIENTS_PAGE_SIZE = 20;
@@ -64,7 +65,9 @@ export const getCoachDashboard = async (userId, now = new Date()) => {
   const coach = await Coach.findOne({ userId }, { _id: 1 }).lean();
   if (!coach) return null;
   const { totalEnrollments, activeClients, pendingClients, attention } = await countCoachEnrollments(coach._id, now);
-  return { totalEnrollments, activeClients, pendingClients, attention };
+  // The whole month's capacity left, not today's batch. Null: no monthly limit set.
+  const { remainingCapacity } = await getCoachCapacity(coach._id, now);
+  return { totalEnrollments, activeClients, pendingClients, attention, remainingMonthlySlots: remainingCapacity };
 };
 
 /** One enrollment row for the admin coach details: who, which plan, when, status. */

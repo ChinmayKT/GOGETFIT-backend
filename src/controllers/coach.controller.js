@@ -5,6 +5,7 @@ import {
   listCoaches,
   updateCoach,
 } from '../services/coach.service.js';
+import { getCoachCapacity } from '../services/coach-capacity.service.js';
 import { removeCoachImage, setCoachImage } from '../services/coach-image.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import {
@@ -68,6 +69,17 @@ export const getCoach = async (req, res, next) => {
  * GET /api/admin/coaches/:id/clients - the coach's enrollment statistics and
  * every non-deleted enrollment with them (EnrolledClient.coachId).
  */
+/** GET /api/admin/coaches/:id/capacity - this month's capacity, today's release, history. */
+export const getCoachCapacityForAdmin = async (req, res, next) => {
+  try {
+    const capacity = await getCoachCapacity(req.params.id);
+    if (!capacity) throw coachNotFound();
+    res.status(200).json({ success: true, message: 'Coach capacity retrieved', data: { capacity } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getCoachClientsForAdmin = async (req, res, next) => {
   try {
     const result = await getCoachClients(req.params.id);

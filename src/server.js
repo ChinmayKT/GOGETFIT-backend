@@ -11,6 +11,7 @@ import FreeDietPlan from './models/free-diet-plan.model.js';
 import EnrolledClient from './models/enrolled-client.model.js';
 import FoodLog from './models/food-log.model.js';
 import WorkoutPlan from './models/workout-plan.model.js';
+import CoachMonthlyCapacity from './models/coach-monthly-capacity.model.js';
 
 /**
  * Unique indexes are hard database constraints, so they are built at startup
@@ -27,6 +28,8 @@ const ensureIndexes = async () => {
     FoodLog.syncIndexes(),
     // The legacy-id unique index makes a migration re-run unable to duplicate a plan.
     WorkoutPlan.syncIndexes(),
+    // One capacity record per coach per month.
+    CoachMonthlyCapacity.syncIndexes(),
   ]);
   logger.info('MongoDB indexes verified');
 };

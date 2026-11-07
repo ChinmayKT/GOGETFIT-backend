@@ -190,6 +190,16 @@ const enrolledClientSchema = new mongoose.Schema(
 
     payment: { type: paymentSchema, default: undefined },
 
+    /**
+     * The business month (YYYY-MM) whose coach capacity this booking used: the
+     * month it was created in, whatever its enrollDate says. A cash payment
+     * recorded late keeps its real date here and still uses this month's slot.
+     *
+     * Absent on enrollments older than this field, and never backfilled: those
+     * count in the month of their enrollDate. See coach-capacity.service.js.
+     */
+    capacityAccountingMonth: { type: String, default: undefined, match: /^\d{4}-\d{2}$/ },
+
     legacy: { type: legacySchema, default: undefined },
     migration: { type: migrationSchema, default: () => ({}) },
 
@@ -230,6 +240,11 @@ enrolledClientSchema.index(
  */
 enrolledClientSchema.index({ userId: 1, enrollDate: -1 }, { name: 'enrolled_user_enrolldate' });
 enrolledClientSchema.index({ coachId: 1, enrollDate: -1 }, { name: 'enrolled_coach_enrolldate' });
+/** A coach's bookings in one capacity month, including the enrollDate fallback for older rows. */
+enrolledClientSchema.index(
+  { coachId: 1, capacityAccountingMonth: 1, enrollDate: 1 },
+  { name: 'enrolled_coach_capacity_month' },
+);
 enrolledClientSchema.index({ planId: 1 }, { name: 'enrolled_plan' });
 /** The default list ordering, and the window the legacy "active" rule tests. */
 enrolledClientSchema.index({ endDate: -1 }, { name: 'enrolled_enddate' });

@@ -1,12 +1,21 @@
 import mongoose from 'mongoose';
 
 import Coach from '../models/coach.model.js';
+import CoachMonthlyCapacity from '../models/coach-monthly-capacity.model.js';
+import EnrolledClient from '../models/enrolled-client.model.js';
 import User from '../models/user.model.js';
 import { ROLE_COACH } from '../constants/roles.js';
 import { calculateAge } from '../utils/age.js';
 import { ERROR_CODES, conflict, notFound } from '../utils/errors.js';
+import { businessDayOf } from '../utils/business-date.js';
 import { normalizePhone } from '../utils/phone.js';
 import { toAdminUser } from './admin.service.js';
+import {
+  ensureMonthRecord,
+  memberAvailability,
+  monthOfDay,
+  recordCapacityChange,
+} from './coach-capacity.service.js';
 
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_PAGE_SIZE = 25;
@@ -70,7 +79,7 @@ export const toCoach = (doc, user) => ({
     instagram: doc.profile?.instagram ?? null,
     linkedin: doc.profile?.linkedin ?? null,
     transformations: doc.profile?.transformations ?? null,
-    availableSlots: doc.profile?.availableSlots ?? null,
+    monthlySlots: doc.profile?.monthlySlots ?? null,
   },
   status: doc.status ?? null,
   createdBy: doc.createdBy ? String(doc.createdBy) : null,
@@ -148,6 +157,14 @@ export const createCoach = async (input, adminId) => {
         { session },
       );
 
+      const monthlySlots = input.profile?.monthlySlots;
+      if (monthlySlots !== undefined) {
+        await CoachMonthlyCapacity.create(
+          [{ coachId: coach._id, month: monthOfDay(businessDayOf(new Date())), capacity: monthlySlots, createdBy: adminId, updatedBy: adminId }],
+          { session },
+        );
+      }
+
       const granted = await User.updateOne(
         { _id: user._id },
         { $addToSet: { roles: ROLE_COACH } },
@@ -196,14 +213,40 @@ export const updateCoach = async (id, patch, adminId) => {
   }
   if (patch.status !== undefined) update.status = patch.status;
 
-  const doc = await Coach.findByIdAndUpdate(
-    id,
-    { $set: update },
-    { new: true, runValidators: true },
-  ).lean();
+  const monthlySlots = patch.profile?.monthlySlots;
+  const doc = monthlySlots === undefined
+    ? await Coach.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true }).lean()
+    : await updateCoachWithCapacity(id, update, monthlySlots, adminId);
   if (!doc) return null;
 
   return toCoach(doc, await loadUser(doc.userId));
+};
+
+/**
+ * A new allocation applies from now on and is recorded on the current month, in
+ * one transaction with the coach. Bookings and earlier months are never touched:
+ * capacity below what is already booked simply stops new bookings.
+ */
+const updateCoachWithCapacity = async (id, update, monthlySlots, adminId, at = new Date()) => {
+  const current = await Coach.findById(id, { 'profile.monthlySlots': 1 }).lean();
+  if (!current) return null;
+  await ensureMonthRecord(id, monthOfDay(businessDayOf(at)), current.profile?.monthlySlots ?? monthlySlots, adminId);
+
+  const session = await mongoose.startSession();
+  let doc;
+  try {
+    await session.withTransaction(async () => {
+      const before = await Coach.findById(id, { 'profile.monthlySlots': 1 }).session(session).lean();
+      const from = before?.profile?.monthlySlots ?? null;
+      doc = await Coach.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true, session }).lean();
+      if (doc && from !== monthlySlots) {
+        await recordCapacityChange(id, { from, to: monthlySlots, adminId, at }, session);
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+  return doc;
 };
 
 /**
@@ -284,9 +327,14 @@ export const listCoaches = async (params = {}) => {
  * Deliberately left out:
  *   - the user's own avatar (User.profile.profilePicture): the coach is shown
  *     with the coach's own pictures only, so the app cannot mix the two up;
- *   - status (always "active" here), audit fields and roles.
+ *   - status (always "active" here), audit fields and roles;
+ *   - the monthly capacity: customers only ever see what has been released.
+ *
+ * [availability] comes from memberAvailability. Without it (a cart line, the
+ * coach's own record) no slots are claimed. [clientsCoachedCount] comes from
+ * countClientsCoached and is likewise only worked out for the coach reads.
  */
-export const toMemberCoach = (doc, user) => ({
+export const toMemberCoach = (doc, user, availability = null, clientsCoachedCount = 0) => ({
   id: String(doc._id),
   user: {
     id: String(doc.userId),
@@ -308,9 +356,31 @@ export const toMemberCoach = (doc, user) => ({
     instagram: doc.profile?.instagram ?? null,
     linkedin: doc.profile?.linkedin ?? null,
     transformations: doc.profile?.transformations ?? 0,
-    availableSlots: doc.profile?.availableSlots ?? 0,
+    availableSlots: availability?.availableSlots ?? 0,
+    slotStatus: availability?.slotStatus ?? null,
+    clientsCoachedCount,
   },
 });
+
+/**
+ * Lifetime distinct clients per coach, keyed by coach id, in one query. A coach
+ * with none has no entry. Derived from the enrollments, like the monthly slots,
+ * so there is no counter to drift and repeat or concurrent purchases by one
+ * client cannot inflate it.
+ *
+ * A client counts when they have a non-deleted enrollment with a successful
+ * payment. A cart item or a failed purchase never produces such a row. This is
+ * independent of the slot count in coach-capacity.service.js, which has its own
+ * rule and resets by month.
+ */
+export const countClientsCoached = async (coachIds) => {
+  const rows = await EnrolledClient.aggregate([
+    { $match: { coachId: { $in: coachIds }, isDeleted: { $ne: true }, 'payment.status': 'Success' } },
+    { $group: { _id: { coachId: '$coachId', userId: '$userId' } } },
+    { $group: { _id: '$_id.coachId', count: { $sum: 1 } } },
+  ]);
+  return new Map(rows.map((row) => [String(row._id), row.count]));
+};
 
 const MEMBER_USER_PROJECTION = {
   'profile.name': 1,
@@ -366,9 +436,16 @@ export const listCoachesForMember = async (params = {}) => {
 
   const users = await User.find({ _id: { $in: docs.map((d) => d.userId) } }, MEMBER_USER_PROJECTION).lean();
   const byId = new Map(users.map((u) => [String(u._id), u]));
+  const [availability, clientsCoached] = await Promise.all([
+    memberAvailability(docs),
+    countClientsCoached(docs.map((doc) => doc._id)),
+  ]);
 
   return {
-    rows: docs.map((doc) => toMemberCoach(doc, byId.get(String(doc.userId)))),
+    rows: docs.map((doc) => {
+      const id = String(doc._id);
+      return toMemberCoach(doc, byId.get(String(doc.userId)), availability.get(id), clientsCoached.get(id) ?? 0);
+    }),
     total,
     page,
     pageSize,
@@ -403,5 +480,8 @@ export const getCoachForMember = async (id) => {
   if (!doc) return null;
 
   const user = await User.findOne({ _id: doc.userId, status: 'active' }, MEMBER_USER_PROJECTION).lean();
-  return user ? toMemberCoach(doc, user) : null;
+  if (!user) return null;
+  const key = String(doc._id);
+  const [availability, clientsCoached] = await Promise.all([memberAvailability([doc]), countClientsCoached([doc._id])]);
+  return toMemberCoach(doc, user, availability.get(key), clientsCoached.get(key) ?? 0);
 };

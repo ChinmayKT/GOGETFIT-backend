@@ -89,7 +89,7 @@ const PROFILE_FIELDS = [
   'instagram',
   'linkedin',
   'transformations',
-  'availableSlots',
+  'monthlySlots',
 ];
 
 /**
@@ -112,6 +112,9 @@ const validateProfile = (value, { requireLevel }) => {
     out.level = validateLevel(value.level);
   }
 
+  // Only a create: an existing coach with no allocation stays unlimited.
+  if (requireLevel && value.monthlySlots === undefined) fail('profile.monthlySlots is required');
+
   const entries = {
     specialization: optionalText(value.specialization, 'profile.specialization', MAX_SPECIALIZATION),
     description: optionalText(value.description, 'profile.description', MAX_DESCRIPTION),
@@ -120,7 +123,7 @@ const validateProfile = (value, { requireLevel }) => {
     instagram: optionalUrl(value.instagram, 'profile.instagram'),
     linkedin: optionalUrl(value.linkedin, 'profile.linkedin'),
     transformations: optionalCounter(value.transformations, 'profile.transformations'),
-    availableSlots: optionalCounter(value.availableSlots, 'profile.availableSlots'),
+    monthlySlots: optionalCounter(value.monthlySlots, 'profile.monthlySlots'),
   };
   for (const [key, entry] of Object.entries(entries)) {
     if (entry !== undefined) out[key] = entry;

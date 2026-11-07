@@ -48,8 +48,11 @@ const coachProfileSchema = new mongoose.Schema(
     linkedin: { type: String, default: null, trim: true },
     /** Display figure shown on the coach's profile. */
     transformations: { type: Number, default: 0, min: 0 },
-    /** Display figure shown on the coach's profile. */
-    availableSlots: { type: Number, default: 0, min: 0 },
+    /**
+     * The confirmed bookings this coach agreed to take per calendar month. Null
+     * until an admin sets one. See coach-capacity.service.js.
+     */
+    monthlySlots: { type: Number, default: null, min: 0 },
   },
   { _id: false },
 );

@@ -89,7 +89,7 @@ beforeEach(async () => {
 
   const created = await server.request('POST', '/api/admin/coaches', {
     token: adminToken,
-    body: { userId: String(coachUser._id), profile: { level: 'LEVEL 2' } },
+    body: { userId: String(coachUser._id), profile: { level: 'LEVEL 2', monthlySlots: 10 } },
   });
   coachId = created.body.data.coach.id;
 });

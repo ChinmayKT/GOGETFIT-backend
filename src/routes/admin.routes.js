@@ -11,6 +11,7 @@ import {
 import {
   deleteCoachImage,
   getCoach,
+  getCoachCapacityForAdmin,
   getCoachClientsForAdmin,
   getCoaches,
   patchCoach,
@@ -110,6 +111,7 @@ router.patch('/users/:id', patchAdminUser);
 router.get('/coaches', getCoaches);
 router.post('/coaches', postCoach);
 router.get('/coaches/:id', getCoach);
+router.get('/coaches/:id/capacity', getCoachCapacityForAdmin);
 // The coach's clients: statistics + every non-deleted enrollment with them.
 router.get('/coaches/:id/clients', getCoachClientsForAdmin);
 router.patch('/coaches/:id', patchCoach);

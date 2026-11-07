@@ -9,6 +9,7 @@ import User from '../models/user.model.js';
 import { now as clockNow } from '../utils/clock.js';
 import { getCouponStatus } from '../utils/coupon-status.js';
 import { ERROR_CODES, badRequest, notFound } from '../utils/errors.js';
+import { consumeSlot, prepareBooking } from './coach-capacity.service.js';
 
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_PAGE_SIZE = 25;
@@ -376,6 +377,9 @@ export const priceAfterCoupon = (basePrice, discountPercent = 0) => {
  * reports the price due and that difference.
  */
 export const createManualEnrollment = async (input, adminId, at = clockNow()) => {
+  // Uses this month's capacity whatever the enroll date, which stays as entered.
+  await prepareBooking(input.coachId, at);
+
   const session = await mongoose.startSession();
   let createdId;
   let pricing;
@@ -414,6 +418,13 @@ export const createManualEnrollment = async (input, adminId, at = clockNow()) =>
 
       pricing = priceAfterCoupon(plan.pricing.basePrice, coupon?.discount?.value ?? 0);
 
+      const capacityAccountingMonth = await consumeSlot(
+        coach._id,
+        at,
+        session,
+        "This coach has no monthly slots left this month. Increase the coach's Monthly Slots to enroll this client.",
+      );
+
       const [doc] = await EnrolledClient.create(
         [
           {
@@ -422,6 +433,7 @@ export const createManualEnrollment = async (input, adminId, at = clockNow()) =>
             coachId: coach._id,
             couponId: coupon?._id ?? null,
             enrollDate: input.enrollDate,
+            capacityAccountingMonth,
             startDate: input.startDate,
             endDate: input.endDate,
             // A plan is started once it has a start date - as the legacy start call did.

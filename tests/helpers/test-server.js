@@ -8,6 +8,7 @@ import Otp from '../../src/models/otp.model.js';
 import MigrationConflict from '../../src/models/migration-conflict.model.js';
 import FreeDietPlan from '../../src/models/free-diet-plan.model.js';
 import Coach from '../../src/models/coach.model.js';
+import CoachMonthlyCapacity from '../../src/models/coach-monthly-capacity.model.js';
 import GogetfitPlan from '../../src/models/gogetfit-plan.model.js';
 import Coupon from '../../src/models/coupon.model.js';
 import EnrolledClient from '../../src/models/enrolled-client.model.js';
@@ -30,6 +31,8 @@ export const TEST_DB_NAME = process.env.TEST_DB_NAME || 'gogetfit_test';
 
 export const connectTestDb = async () => {
   if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is required to run integration tests');
+  // An override must still name a test database - never the real one.
+  if (!TEST_DB_NAME.endsWith('_test')) throw new Error(`Refusing to use non-test database "${TEST_DB_NAME}"`);
 
   await mongoose.connect(process.env.MONGODB_URI, { dbName: TEST_DB_NAME });
 
@@ -43,6 +46,7 @@ export const connectTestDb = async () => {
     MigrationConflict.syncIndexes(),
     FreeDietPlan.syncIndexes(),
     Coach.syncIndexes(),
+    CoachMonthlyCapacity.syncIndexes(),
     GogetfitPlan.syncIndexes(),
     Coupon.syncIndexes(),
     EnrolledClient.syncIndexes(),
@@ -63,6 +67,7 @@ export const clearTestDb = async () => {
     MigrationConflict.deleteMany({}),
     FreeDietPlan.deleteMany({}),
     Coach.deleteMany({}),
+    CoachMonthlyCapacity.deleteMany({}),
     GogetfitPlan.deleteMany({}),
     Coupon.deleteMany({}),
     EnrolledClient.deleteMany({}),

@@ -9,6 +9,7 @@ import { ROLE_CLIENT, mergeRoles } from '../constants/roles.js';
 import User from '../models/user.model.js';
 import { getCouponStatus } from '../utils/coupon-status.js';
 import { ERROR_CODES, badRequest, conflict, notFound } from '../utils/errors.js';
+import { assertCoachHasSlots, consumeSlot, prepareBooking } from './coach-capacity.service.js';
 import { priceAfterCoupon } from './enrolled-client.service.js';
 import { toMemberCoach } from './coach.service.js';
 import { toMemberPlan } from './gogetfit-plan.service.js';
@@ -86,6 +87,9 @@ export const assertPurchasable = async ({ coachId, planId }, session = null) => 
       `This coach (${coach.profile?.level ?? 'no level'}) does not offer ${plan.coachLevel} plans`,
     );
   }
+
+  // The purchase transaction claims a slot itself, which is the real check.
+  if (!session) await assertCoachHasSlots(coach);
 
   return { plan, coach };
 };
@@ -216,9 +220,11 @@ export const quoteCartItem = async (userId, cartItemId, { couponId = null, coupo
  * creates no enrollment.
  *
  * Idempotent on `paymentReference`: a retried request returns the enrollment the
- * first one created instead of making a second. That reference is the payment
- * gateway's own id, so a double-tap, a lost response or a webhook replay all
- * resolve to one enrollment.
+ * first one created instead of making a second, so a double-tap or a lost
+ * response resolve to one enrollment.
+ *
+ * NOT PROOF OF PAYMENT: today the app generates this reference itself and nothing
+ * here verifies it. See docs/coach-monthly-slots.md before accepting real payments.
  */
 export const purchaseCartItem = async (
   userId,
@@ -233,6 +239,9 @@ export const purchaseCartItem = async (
   if (alreadyPaid) {
     return { enrolledClientId: String(alreadyPaid._id), idempotent: true };
   }
+
+  const pending = await CartItem.findOne({ _id: cartItemId, userId }, { coachId: 1 }).lean();
+  if (pending) await prepareBooking(pending.coachId, at);
 
   const session = await mongoose.startSession();
   let createdId = null;
@@ -260,6 +269,8 @@ export const purchaseCartItem = async (
 
       pricing = priceAfterCoupon(plan.pricing.basePrice, coupon?.discount?.value ?? 0);
 
+      const capacityAccountingMonth = await consumeSlot(coach._id, at, session);
+
       const [enrollment] = await EnrolledClient.create(
         [
           {
@@ -268,6 +279,7 @@ export const purchaseCartItem = async (
             coachId: coach._id,
             couponId: coupon?._id ?? null,
             enrollDate: at,
+            capacityAccountingMonth,
             // Set when the member starts the plan, exactly as the legacy flow did.
             startDate: null,
             endDate: null,
