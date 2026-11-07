@@ -3,6 +3,7 @@ import {
   getSubmittedBodyMetricsForCoach,
   listBodyMetricsForAdmin,
   listMemberBodyMetrics,
+  listSubmittedBodyMetricsForCoach,
   removeMemberBodyMetricsMedia,
   saveMemberBodyMetrics,
   setMemberBodyMetricsMedia,
@@ -64,6 +65,12 @@ export const getMyBodyMetricsList = handle(async (req, res) => {
 export const getEnrollmentBodyMetricsForCoach = handle(async (req, res) => {
   const bodyMetrics = await getSubmittedBodyMetricsForCoach(req.user._id, req.params.enrollmentId);
   res.status(200).json({ success: true, data: { bodyMetrics } });
+});
+
+/** GET /api/coach/clients/:userId/body-metrics - History: submitted, across the client's enrollments with this coach. */
+export const getClientBodyMetricsForCoach = handle(async (req, res) => {
+  const result = await listSubmittedBodyMetricsForCoach(req.user._id, req.params.userId);
+  res.status(200).json({ success: true, data: result });
 });
 
 /** GET /api/admin/users/:id/body-metrics - a member's submitted Body Metrics (admin). */

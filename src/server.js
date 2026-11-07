@@ -11,6 +11,7 @@ import FreeDietPlan from './models/free-diet-plan.model.js';
 import EnrolledClient from './models/enrolled-client.model.js';
 import FoodLog from './models/food-log.model.js';
 import WorkoutPlan from './models/workout-plan.model.js';
+import WeeklyUpdate from './models/weekly-update.model.js';
 import CoachMonthlyCapacity from './models/coach-monthly-capacity.model.js';
 
 /**
@@ -28,6 +29,8 @@ const ensureIndexes = async () => {
     FoodLog.syncIndexes(),
     // The legacy-id unique index makes a migration re-run unable to duplicate a plan.
     WorkoutPlan.syncIndexes(),
+    // One Weekly Update per member, enrollment and report date.
+    WeeklyUpdate.syncIndexes(),
     // One capacity record per coach per month.
     CoachMonthlyCapacity.syncIndexes(),
   ]);

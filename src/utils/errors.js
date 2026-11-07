@@ -53,6 +53,14 @@ export const ERROR_CODES = {
   BODY_METRICS_ALREADY_SUBMITTED: 'BODY_METRICS_ALREADY_SUBMITTED',
   // A submission is missing a measurement or a required photo.
   BODY_METRICS_INCOMPLETE: 'BODY_METRICS_INCOMPLETE',
+  // No Weekly Update has been made for that date.
+  WEEKLY_UPDATE_NOT_FOUND: 'WEEKLY_UPDATE_NOT_FOUND',
+  // A Weekly Update is submitted once per member, enrollment and date; it is final.
+  WEEKLY_UPDATE_ALREADY_SUBMITTED: 'WEEKLY_UPDATE_ALREADY_SUBMITTED',
+  // A submission is missing a required progress photo.
+  WEEKLY_UPDATE_INCOMPLETE: 'WEEKLY_UPDATE_INCOMPLETE',
+  // A Weekly Update is made for today; another day's is read-only.
+  WEEKLY_UPDATE_DAY_CLOSED: 'WEEKLY_UPDATE_DAY_CLOSED',
   FOOD_NOT_FOUND: 'FOOD_NOT_FOUND',
   // Another ACTIVE coupon already uses this code.
   COUPON_CODE_EXISTS: 'COUPON_CODE_EXISTS',

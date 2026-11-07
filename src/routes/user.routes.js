@@ -20,6 +20,13 @@ import {
   putMyBodyMetricsMedia,
 } from '../controllers/body-metrics.controller.js';
 import {
+  deleteMyWeeklyUpdateMedia,
+  getMyWeeklyUpdate,
+  getMyWeeklyUpdates,
+  postMyWeeklyUpdate,
+  putMyWeeklyUpdateMedia,
+} from '../controllers/weekly-update.controller.js';
+import {
   deleteCartItem,
   getCart,
   getMemberCoupons,
@@ -110,5 +117,16 @@ router.get('/me/enrollments/:enrollmentId/body-metrics', requireAuth, getMyBodyM
 router.post('/me/enrollments/:enrollmentId/body-metrics', requireAuth, postMyBodyMetrics);
 router.put('/me/enrollments/:enrollmentId/body-metrics/media/:slot', requireAuth, bodyMetricsMediaBody, putMyBodyMetricsMedia);
 router.delete('/me/enrollments/:enrollmentId/body-metrics/media/:slot', requireAuth, deleteMyBodyMetricsMedia);
+
+/**
+ * Weekly Updates: the member's own, resolved to their enrollment server-side.
+ * Photos (and the optional video) are uploaded into today's draft first, as
+ * raw bytes per slot; the POST then submits the nine measurements over them.
+ */
+router.get('/me/weekly-updates', requireAuth, getMyWeeklyUpdates);
+router.post('/me/weekly-updates', requireAuth, postMyWeeklyUpdate);
+router.get('/me/weekly-updates/:date', requireAuth, getMyWeeklyUpdate);
+router.put('/me/weekly-updates/:date/media/:slot', requireAuth, bodyMetricsMediaBody, putMyWeeklyUpdateMedia);
+router.delete('/me/weekly-updates/:date/media/:slot', requireAuth, deleteMyWeeklyUpdateMedia);
 
 export default router;

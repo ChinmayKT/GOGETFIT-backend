@@ -141,13 +141,14 @@ test('submit: all 11 measurements and the 3 photos persist, submittedAt set; vid
   assert.deepEqual(bm.measurements, ALL);
   for (const slot of ['front', 'side', 'back']) {
     assert.match(bm.media[slot].url, new RegExp(`/uploads/body-metrics/${e._id}/${slot}/[0-9a-f]{32}\\.jpg$`));
-    await fs.access(path.join(uploadRoot, bm.media[slot].storageKey));
+    assert.equal('storageKey' in bm.media[slot], false, 'storage keys stay server-side');
   }
   assert.equal(bm.media.video, null);
 
   const doc = await stored(e._id);
   assert.equal(doc.status, 'submitted');
   assert.ok(doc.submittedAt instanceof Date);
+  for (const slot of ['front', 'side', 'back']) await fs.access(path.join(uploadRoot, doc[slot].storageKey));
 });
 
 test("the record carries the member's own gender, read off their profile", async () => {
@@ -370,4 +371,70 @@ test('admin: submitted Body Metrics per enrollment, newest first; drafts hidden;
 
   assert.equal((await server.request('GET', `/api/admin/users/${member._id}/body-metrics`, { token: memberToken })).status, 403);
   assert.equal((await server.request('GET', `/api/admin/users/${new mongoose.Types.ObjectId()}/body-metrics`, { token: adminToken })).status, 404);
+});
+
+// --- GET /api/coach/clients/:userId/body-metrics (Body Metrics History) ---
+
+const coachHistory = (userId, token = coachAToken) => server.request('GET', `/api/coach/clients/${userId}/body-metrics`, { token });
+const submitAll = async (enrollmentId, measurements = ALL, token = memberToken) => {
+  await save(enrollmentId, { measurements }, token);
+  for (const [slot, fill] of [['front', 1], ['side', 2], ['back', 3]]) {
+    assert.equal((await upload(enrollmentId, slot, jpeg(fill), { token })).status, 200);
+  }
+  await save(enrollmentId, { status: 'submitted' }, token);
+};
+
+test('coach history: submitted Body Metrics across the client\'s enrollments with this coach, newest first, each on its own enrollment', async () => {
+  // Bought the same plan twice; submitted only the first time.
+  const first = await enroll(member, coachA, { enrollDate: new Date('2026-10-02') });
+  const second = await enroll(member, coachA, { enrollDate: new Date('2026-10-24') });
+  await submitAll(first._id);
+
+  const res = await coachHistory(member._id);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.total, 1);
+  const [row] = res.body.data.bodyMetrics;
+  assert.equal(row.enrollmentId, String(first._id));
+  assert.equal(row.enrollment.enrollDate, '2026-10-02T00:00:00.000Z');
+  assert.deepEqual(row.measurements, ALL);
+  assert.ok(row.media.front.url && row.media.side.url && row.media.back.url);
+  // The newer cycle still reads as not submitted - nothing is copied onto it.
+  const perEnrollment = await server.request('GET', `/api/coach/enrollments/${second._id}/body-metrics`, { token: coachAToken });
+  assert.equal(perEnrollment.body.data.bodyMetrics, null);
+
+  // A later submission is listed on top; the older one stays as it was.
+  await submitAll(second._id, { ...ALL, weight: 64 });
+  const both = (await coachHistory(member._id)).body.data.bodyMetrics;
+  assert.deepEqual(both.map((b) => b.enrollmentId), [String(second._id), String(first._id)]);
+  assert.deepEqual(both.map((b) => b.measurements.weight), [64, 66]);
+});
+
+test('coach history: drafts, deleted enrollments and other coaches\' enrollments are left out', async () => {
+  const draft = await enroll(member, coachA);
+  await save(draft._id, { measurements: ALL });
+  const deleted = await enroll(member, coachA);
+  await submitAll(deleted._id);
+  await EnrolledClient.updateOne({ _id: deleted._id }, { $set: { isDeleted: true } });
+  const theirs = await enroll(member, coachB);
+  await submitAll(theirs._id, { ...ALL, weight: 70 });
+
+  const res = await coachHistory(member._id);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.data, { bodyMetrics: [], total: 0 });
+  // Coach B sees only their own enrollment's record.
+  const b = (await coachHistory(member._id, coachBToken)).body.data.bodyMetrics;
+  assert.deepEqual(b.map((x) => x.enrollmentId), [String(theirs._id)]);
+});
+
+test('coach history: a member who is not this coach\'s client is a 404; members 403; no token 401', async () => {
+  const theirs = await enroll(other, coachB);
+  await submitAll(theirs._id, ALL, otherToken);
+  for (const id of [other._id, new mongoose.Types.ObjectId(), 'nope']) {
+    const res = await coachHistory(id);
+    assert.equal(res.status, 404, String(id));
+    assert.equal(res.body.error.code, 'ENROLLED_CLIENT_NOT_FOUND');
+    assert.equal(JSON.stringify(res.body).includes('measurements'), false);
+  }
+  assert.equal((await coachHistory(other._id, memberToken)).status, 403);
+  assert.equal((await server.request('GET', `/api/coach/clients/${other._id}/body-metrics`)).status, 401);
 });

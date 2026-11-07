@@ -70,6 +70,7 @@ import {
   getUserDietPlansForAdmin,
   postAdminEnrollmentDietPlan,
 } from '../controllers/diet-plan.controller.js';
+import { getAdminTransformations } from '../controllers/coach-transformation.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
 import { rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
 
@@ -108,6 +109,8 @@ router.patch('/users/:id', patchAdminUser);
 
 // Coach profiles. A coach is an existing user plus a Coach document; there is
 // no DELETE - deactivation is PATCH { status: "inactive" }.
+// Transformations coaches submitted, newest first.
+router.get('/transformations', getAdminTransformations);
 router.get('/coaches', getCoaches);
 router.post('/coaches', postCoach);
 router.get('/coaches/:id', getCoach);

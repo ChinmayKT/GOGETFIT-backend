@@ -158,6 +158,38 @@ export const validateUpdateFood = (body = {}) => {
 
 const SORT_DIRECTIONS = ['asc', 'desc'];
 
+/** The nutrients the Food Database's multi-level sort may order by. */
+export const NUTRITION_SORT_METRICS = ['calories', 'protein', 'carbs', 'fat'];
+export const MAX_SORT_RULES = 4;
+
+/**
+ * `sort=calories:desc,protein:desc,fat:asc` - nutrition sort rules in priority
+ * order (the first decides, each later one only breaks the ties left by the
+ * ones before it). Metrics come from the allow-list above, never a field name
+ * the client chose; each metric at most once; at most four rules.
+ */
+const parseSortRules = (raw) => {
+  // A repeated ?sort= arrives as an array: one list only, so it is refused.
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    fail('sort must be a comma-separated list of metric:direction, e.g. calories:desc,protein:asc');
+  }
+  const parts = raw.split(',');
+  if (parts.length > MAX_SORT_RULES) fail(`sort accepts at most ${MAX_SORT_RULES} rules`);
+  const seen = new Set();
+  return parts.map((part, index) => {
+    const [metric, direction, ...rest] = part.trim().split(':');
+    const label = `sort rule ${index + 1}`;
+    if (rest.length > 0 || !metric || !direction) fail(`${label} must be metric:direction`);
+    if (!NUTRITION_SORT_METRICS.includes(metric)) {
+      fail(`${label}: metric must be one of: ${NUTRITION_SORT_METRICS.join(', ')}`);
+    }
+    if (!SORT_DIRECTIONS.includes(direction)) fail(`${label}: direction must be one of: ${SORT_DIRECTIONS.join(', ')}`);
+    if (seen.has(metric)) fail(`sort uses ${metric} more than once`);
+    seen.add(metric);
+    return { metric, direction };
+  });
+};
+
 /**
  * List query. Page size, filters and sort are all validated here, and the sort
  * key is matched against the service's allow-list rather than passed through.
@@ -200,6 +232,8 @@ export const validateFoodListQuery = (query = {}) => {
     // Only the two directions; anything else is a 400, never a silent asc.
     out.sortDir = validateEnum(rawSortDir, SORT_DIRECTIONS, 'sortOrder');
   }
+
+  if (query.sort !== undefined) out.sortRules = parseSortRules(query.sort);
 
   return out;
 };

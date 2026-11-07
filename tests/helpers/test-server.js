@@ -16,11 +16,13 @@ import Food from '../../src/models/food.model.js';
 import CartItem from '../../src/models/cart-item.model.js';
 import Questionnaire from '../../src/models/questionnaire.model.js';
 import BodyMetrics from '../../src/models/body-metrics.model.js';
+import WeeklyUpdate from '../../src/models/weekly-update.model.js';
 import DietPlan from '../../src/models/diet-plan.model.js';
 import FoodLog from '../../src/models/food-log.model.js';
 import DailyUpdate from '../../src/models/daily-update.model.js';
 import GoGetFitCoins from '../../src/models/gogetfit-coins.model.js';
 import Streak from '../../src/models/streak.model.js';
+import CoachTransformation from '../../src/models/coach-transformation.model.js';
 
 /**
  * Integration tests run against a dedicated database on the configured cluster
@@ -80,6 +82,8 @@ export const clearTestDb = async () => {
     DailyUpdate.deleteMany({}),
     Streak.deleteMany({}),
     GoGetFitCoins.deleteMany({}),
+    WeeklyUpdate.deleteMany({}),
+    CoachTransformation.deleteMany({}),
   ]);
 };
 

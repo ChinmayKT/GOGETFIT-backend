@@ -14,7 +14,7 @@
     "migrate:users": "node migration/scripts/migrate-users.js",
     "migrate:users:apply": "node migration/scripts/migrate-users.js --apply",
     "migrate:user": "node migration/scripts/migrate-single-user.js",
-  "migrate:conflicts": "node migration/scripts/resolve-conflict.js",
+    "migrate:conflicts": "node migration/scripts/resolve-conflict.js",
     "migrate:children": "node migration/scripts/migrate-child-records.js",
     "migrate:validate": "node migration/scripts/validate-migration.js",
     "migrate:users-email": "node migration/scripts/backfill-user-email.js",
@@ -51,6 +51,7 @@
   "license": "ISC",
   "dependencies": {
     "argon2": "^0.45.1",
+    "compression": "^1.8.2",
     "dotenv": "^18.0.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",

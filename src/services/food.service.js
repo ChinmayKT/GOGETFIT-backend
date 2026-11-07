@@ -95,6 +95,31 @@ export const buildFoodFilter = ({ search, foodType, unit, status } = {}) => {
   return filter;
 };
 
+/**
+ * Multi-level nutrition sort, in MongoDB, before paging: one compound $sort
+ * whose keys are the rules in priority order, so a later rule only orders
+ * foods every earlier rule left tied. Values are compared as stored (one
+ * serving, never rescaled). A food missing a value sorts after every food
+ * that has one, in either direction - each metric is preceded by a 0/1
+ * "missing" key. After the rules: the list's own sort (name A-Z by default),
+ * unless it is one of the rule metrics, then _id, so equal foods keep one
+ * fixed order across pages.
+ */
+const nutritionSortPipeline = (filter, rules, { sortField, sortDir, skip, limit }) => {
+  const missing = {};
+  const sort = {};
+  for (const { metric, direction } of rules) {
+    const flag = `_missing_${metric}`;
+    missing[flag] = { $cond: [{ $isNumber: `$${metric}` }, 0, 1] };
+    sort[flag] = 1;
+    sort[metric] = direction === 'desc' ? -1 : 1;
+  }
+  // Never re-set a rule's key: that would overwrite its direction.
+  if (!(sortField in sort)) sort[sortField] = sortDir;
+  sort._id = 1;
+  return [{ $match: filter }, { $addFields: missing }, { $sort: sort }, { $skip: skip }, { $limit: limit }];
+};
+
 /** One page of foods. Always paginated and capped. Default order is name A-Z. */
 export const listFoods = async (params = {}) => {
   const page = Math.max(1, Number.parseInt(params.page, 10) || 1);
@@ -105,14 +130,18 @@ export const listFoods = async (params = {}) => {
   const sortDir = params.sortDir === 'desc' ? -1 : 1;
 
   const filter = buildFoodFilter(params);
+  const skip = (page - 1) * pageSize;
+  const rules = params.sortRules ?? [];
   const [docs, total] = await Promise.all([
-    Food.find(filter)
-      // _id breaks ties, so paging is stable even where the sort field repeats
-      // (the 960 migrated foods share a migration timestamp).
-      .sort({ [sortField]: sortDir, _id: sortDir })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .lean(),
+    rules.length > 0
+      ? Food.aggregate(nutritionSortPipeline(filter, rules, { sortField, sortDir, skip, limit: pageSize }))
+      : Food.find(filter)
+          // _id breaks ties, so paging is stable even where the sort field repeats
+          // (the 960 migrated foods share a migration timestamp).
+          .sort({ [sortField]: sortDir, _id: sortDir })
+          .skip(skip)
+          .limit(pageSize)
+          .lean(),
     Food.countDocuments(filter),
   ]);
 

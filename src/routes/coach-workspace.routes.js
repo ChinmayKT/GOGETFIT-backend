@@ -3,12 +3,18 @@ import { Router } from 'express';
 import { ROLE_COACH } from '../constants/roles.js';
 import {
   getClientEnrollments,
+  getClientQuestionnaires,
   getClients,
   getDashboard,
   getEnrollmentDietPlanCreateData,
   getEnrollmentQuestionnaire,
 } from '../controllers/coach-workspace.controller.js';
-import { getEnrollmentBodyMetricsForCoach } from '../controllers/body-metrics.controller.js';
+import { getClientBodyMetricsForCoach, getEnrollmentBodyMetricsForCoach } from '../controllers/body-metrics.controller.js';
+import {
+  getCoachClientWeeklyUpdate,
+  getCoachClientWeeklyUpdates,
+  getCoachClientWeeklyUpdatesAll,
+} from '../controllers/weekly-update.controller.js';
 import {
   getCoachDietPlanLibrary,
   getCoachDietPlanLibraryItem,
@@ -26,7 +32,9 @@ import {
   getCoachWorkoutPlanLibraryItem,
   postCoachClientWorkoutPlan,
 } from '../controllers/workout-plan.controller.js';
+import { postCoachTransformation } from '../controllers/coach-transformation.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
+import { rawImageBody } from '../middleware/upload.middleware.js';
 
 /**
  * The Coach Workspace API: /api/coach/*. Only signed-in users holding the
@@ -43,10 +51,21 @@ router.get('/dashboard', getDashboard);
 router.get('/clients', getClients);
 // One client's coaching cycles with this coach, current/latest first.
 router.get('/clients/:userId/enrollments', getClientEnrollments);
+// Questionnaire History: one client's submitted questionnaires across their enrollments with this coach.
+router.get('/clients/:userId/questionnaires', getClientQuestionnaires);
+// Body Metrics History: one client's submitted Body Metrics across their enrollments with this coach.
+router.get('/clients/:userId/body-metrics', getClientBodyMetricsForCoach);
+// View Weekly Update: one client's submitted Weekly Updates across their enrollments with this coach, paged.
+router.get('/clients/:userId/weekly-updates', getCoachClientWeeklyUpdatesAll);
+// Submit Transformation: an image + title for one of the coach's clients (raw image body, ?title=).
+router.post('/clients/:userId/transformations', rawImageBody, postCoachTransformation);
 // The submitted questionnaire of one of the coach's own enrollments.
 router.get('/enrollments/:enrollmentId/questionnaire', getEnrollmentQuestionnaire);
 // The submitted Body Metrics of one of the coach's own enrollments.
 router.get('/enrollments/:enrollmentId/body-metrics', getEnrollmentBodyMetricsForCoach);
+// The submitted Weekly Updates of one of the coach's own enrollments, newest first.
+router.get('/enrollments/:enrollmentId/weekly-updates', getCoachClientWeeklyUpdates);
+router.get('/enrollments/:enrollmentId/weekly-updates/:date', getCoachClientWeeklyUpdate);
 // The diet plans of the client in one of the coach's own enrollments (read-only).
 router.get('/enrollments/:enrollmentId/diet-plans', getCoachClientDietPlans);
 // The client's workout plans, read-only - the enrollment must be this coach's.

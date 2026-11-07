@@ -68,7 +68,7 @@ export const totalsOf = (calorieOut, calorieIn) => {
  * enrollment (as the app shows it - height asked in feet, kept in whole cm),
  * else their profile. A snapshot only; nothing is written back.
  */
-const profileSnapshot = async (user, enrollmentId) => {
+export const profileSnapshot = async (user, enrollmentId) => {
   const q = enrollmentId ? await Questionnaire.findOne({ userId: user._id, enrollmentId }).lean() : null;
   const answers = q?.answers ?? {};
   const answer = (k) => (answers instanceof Map ? answers.get(k) : answers[k]);

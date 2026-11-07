@@ -68,8 +68,18 @@ export const foodImageFolder = (foodId) => `foods/${foodId}`;
 export const bodyMetricsMediaFolder = (enrollmentId, slot) => `body-metrics/${enrollmentId}/${slot}`;
 
 /**
+ * A member's Weekly Update media: a folder per member, report date and slot,
+ * so a stored key says whose and which week it is, and no two updates (or
+ * slots) ever share a file.
+ */
+export const weeklyUpdateMediaFolder = (clientId, reportDate, slot) => `weekly-updates/${clientId}/${reportDate}/${slot}`;
+
+/**
  * A meal's photo in a member's food log: a folder per member, business day
  * and meal, so a stored key itself says whose, which day and which meal it
  * is - which is what a submission's image reference is checked against.
  */
 export const foodLogMealImageFolder = (clientId, logDate, meal) => `food-logs/${clientId}/${logDate}/meal-${meal}`;
+
+/** A coach's transformation submissions: a folder per coach. */
+export const coachTransformationFolder = (coachId) => `coach-transformations/${coachId}`;

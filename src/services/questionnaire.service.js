@@ -330,8 +330,45 @@ export const getSubmittedQuestionnaireForCoach = async (coachUserId, enrollmentI
   return doc ? toQuestionnaire(doc) : null;
 };
 
+/**
+ * Coach read: every SUBMITTED questionnaire of one member, across all of the
+ * member's enrollments with the signed-in coach, newest submission first.
+ *
+ *   authenticated user -> their Coach -> EnrolledClient { userId, coachId: that
+ *   coach, not deleted } -> Questionnaire { enrollmentId in those, submitted }
+ *
+ * Each keeps its own enrollment (with enrollDate), so a member who bought the
+ * same plan twice shows which cycle each submission belongs to. Enrollments
+ * with another coach are never included. 404 when the member has no
+ * enrollment with this coach (or the id is malformed).
+ */
+export const listSubmittedQuestionnairesForCoach = async (coachUserId, clientUserId) => {
+  const coach = await Coach.findOne({ userId: coachUserId }, { _id: 1 }).lean();
+  if (!coach) throw notFound(ERROR_CODES.COACH_NOT_FOUND, 'You do not have a coach profile');
+
+  const notFoundError = notFound(ERROR_CODES.ENROLLED_CLIENT_NOT_FOUND, 'This member is not one of your clients');
+  if (!mongoose.isValidObjectId(clientUserId)) throw notFoundError;
+  const enrollmentIds = await EnrolledClient.distinct('_id', {
+    userId: clientUserId,
+    coachId: coach._id,
+    isDeleted: { $ne: true },
+  });
+  if (enrollmentIds.length === 0) throw notFoundError;
+
+  const docs = await Questionnaire.find({ userId: clientUserId, enrollmentId: { $in: enrollmentIds }, status: 'submitted' })
+    .sort({ submittedAt: -1, createdAt: -1, _id: -1 })
+    .populate([
+      { path: 'enrollmentId', select: 'planId enrollDate startDate endDate', populate: { path: 'planId', select: 'name planType durationWeeks' } },
+      { path: 'coachId', select: 'profile.level userId', populate: { path: 'userId', select: 'profile.name' } },
+    ])
+    .lean();
+  const questionnaires = docs.map(toQuestionnaire);
+  return { questionnaires, total: questionnaires.length };
+};
+
 export default {
   getSubmittedQuestionnaireForCoach,
+  listSubmittedQuestionnairesForCoach,
   listQuestionnairesForAdmin,
   getMemberQuestionnaire,
   saveMemberQuestionnaire,

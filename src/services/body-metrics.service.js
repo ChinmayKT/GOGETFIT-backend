@@ -37,7 +37,8 @@ import { bodyMetricsMediaFolder, getStorage } from './storage/index.js';
 const iso = (date) => (date ? new Date(date).toISOString() : null);
 const idOf = (value) => (value ? String(value._id ?? value) : null);
 const isObject = (value) => value && typeof value === 'object' && !(value instanceof mongoose.Types.ObjectId);
-const mediaRef = (media) => (media?.url ? { url: media.url, storageKey: media.storageKey } : null);
+// The storage key stays in the database for file management; readers only need the URL.
+const mediaRef = (media) => (media?.url ? { url: media.url } : null);
 
 const POPULATE = [
   { path: 'enrollmentId', select: 'planId enrollDate startDate endDate isDeleted', populate: { path: 'planId', select: 'name planType durationWeeks' } },
@@ -258,6 +259,24 @@ export const getSubmittedBodyMetricsForCoach = async (coachUserId, enrollmentId)
   return doc ? toBodyMetrics(doc) : null;
 };
 
+/**
+ * Coach read (Body Metrics History): one member's SUBMITTED Body Metrics across
+ * every enrollment they have with the signed-in coach, newest first. Each keeps
+ * its own enrollment; enrollments with another coach are never included. 404
+ * when the member has no enrollment with this coach (or the id is malformed).
+ */
+export const listSubmittedBodyMetricsForCoach = async (coachUserId, clientUserId) => {
+  const coach = await Coach.findOne({ userId: coachUserId }, { _id: 1 }).lean();
+  if (!coach) throw notFound(ERROR_CODES.COACH_NOT_FOUND, 'You do not have a coach profile');
+
+  const notFoundError = notFound(ERROR_CODES.ENROLLED_CLIENT_NOT_FOUND, 'This member is not one of your clients');
+  if (!mongoose.isValidObjectId(clientUserId)) throw notFoundError;
+  const enrollmentIds = await EnrolledClient.distinct('_id', { userId: clientUserId, coachId: coach._id, isDeleted: { $ne: true } });
+  if (enrollmentIds.length === 0) throw notFoundError;
+
+  return listFor({ userId: clientUserId, enrollmentId: { $in: enrollmentIds }, status: 'submitted' });
+};
+
 /** Admin read: one member's SUBMITTED Body Metrics, one per enrollment, newest first. */
 export const listBodyMetricsForAdmin = async (userId) => {
   if (!mongoose.isValidObjectId(userId) || !(await User.exists({ _id: userId }))) {
@@ -275,5 +294,6 @@ export default {
   removeMemberBodyMetricsMedia,
   listMemberBodyMetrics,
   getSubmittedBodyMetricsForCoach,
+  listSubmittedBodyMetricsForCoach,
   listBodyMetricsForAdmin,
 };

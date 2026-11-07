@@ -4,7 +4,7 @@ import {
   getCoachDashboard,
 } from '../services/coach-dashboard.service.js';
 import { ACTOR_COACH, getDietPlanCreateData } from '../services/diet-plan-create-data.service.js';
-import { getSubmittedQuestionnaireForCoach } from '../services/questionnaire.service.js';
+import { getSubmittedQuestionnaireForCoach, listSubmittedQuestionnairesForCoach } from '../services/questionnaire.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import { validateMemberCoachListQuery } from '../validators/coach.validator.js';
 
@@ -66,6 +66,22 @@ export const getEnrollmentQuestionnaire = async (req, res, next) => {
   try {
     const questionnaire = await getSubmittedQuestionnaireForCoach(req.user._id, req.params.enrollmentId);
     res.status(200).json({ success: true, data: { questionnaire } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/coach/clients/:userId/questionnaires
+ *
+ * Questionnaire History: every submitted questionnaire of one client across
+ * all of their enrollments with the signed-in coach, newest first. 404 when
+ * the member has no enrollment with this coach.
+ */
+export const getClientQuestionnaires = async (req, res, next) => {
+  try {
+    const data = await listSubmittedQuestionnairesForCoach(req.user._id, req.params.userId);
+    res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }

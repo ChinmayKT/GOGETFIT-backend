@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import compression from 'compression';
 import express from 'express';
 import mongoose from 'mongoose';
 
@@ -9,6 +10,9 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware.js'
 
 const app = express();
 
+// Gzip for responses over 1 KB whose type compresses (JSON, text). Images and
+// video are already compressed and pass through untouched.
+app.use(compression());
 app.use(express.json());
 
 app.get('/health', (req, res) => {

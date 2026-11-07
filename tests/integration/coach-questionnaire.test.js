@@ -193,3 +193,63 @@ test('7. the member read is unchanged by the coach endpoint', async () => {
   assert.equal(res.status, 200);
   assert.deepEqual(res.body.data.questionnaire.answers, fullAnswers);
 });
+
+// --- GET /api/coach/clients/:userId/questionnaires (Questionnaire History) ---
+
+const history = (userId, token = coachAToken) =>
+  server.request('GET', `/api/coach/clients/${userId}/questionnaires`, { token });
+
+test('history: every submitted questionnaire across the client\'s enrollments with this coach, newest first', async () => {
+  // Bought the same plan twice; answered only the first time.
+  const first = await enroll(coachA, { enrollDate: new Date('2026-10-02') });
+  const second = await enroll(coachA, { enrollDate: new Date('2026-10-24') });
+  const q = await seedQuestionnaire(first);
+
+  const res = await history(member._id);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.total, 1);
+  const [row] = res.body.data.questionnaires;
+  assert.equal(row.questionnaireId, String(q._id));
+  // Keeps its own enrollment - never shown as the newer one's.
+  assert.equal(row.enrollmentId, String(first._id));
+  assert.equal(row.enrollment.enrollDate, '2026-10-02T00:00:00.000Z');
+  assert.deepEqual(row.answers, fullAnswers);
+  assert.equal(res.body.data.questionnaires.some((x) => x.enrollmentId === String(second._id)), false);
+  // The per-enrollment read is unchanged: the newer cycle still has none.
+  assert.equal((await read(second._id)).body.data.questionnaire, null);
+
+  // A later submission is listed on top, the older one kept as it was.
+  const later = await seedQuestionnaire(second, { answers: { ...fullAnswers, city: 'Later' } });
+  await Questionnaire.updateOne({ _id: later._id }, { $set: { submittedAt: new Date('2026-10-25T10:00:00Z') } });
+  const both = (await history(member._id)).body.data.questionnaires;
+  assert.deepEqual(both.map((x) => x.answers.city), ['Later', 'Banglore']);
+});
+
+test('history: drafts, deleted enrollments and other coaches\' enrollments are left out', async () => {
+  const mine = await enroll(coachA);
+  await seedQuestionnaire(mine, { status: 'draft' });
+  const deleted = await enroll(coachA, { isDeleted: true });
+  await seedQuestionnaire(deleted);
+  const theirs = await enroll(coachB);
+  await seedQuestionnaire(theirs, { answers: { ...fullAnswers, city: 'Theirs' } });
+
+  const res = await history(member._id);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.data, { questionnaires: [], total: 0 });
+  // Coach B sees only their own enrollment's submission.
+  const b = (await history(member._id, coachBToken)).body.data.questionnaires;
+  assert.deepEqual(b.map((x) => x.answers.city), ['Theirs']);
+});
+
+test('history: a member who is not this coach\'s client is a 404; members 403; no token 401', async () => {
+  const theirs = await enroll(coachB);
+  await seedQuestionnaire(theirs);
+  for (const id of [member._id, new mongoose.Types.ObjectId(), 'nope']) {
+    const res = await history(id);
+    assert.equal(res.status, 404, String(id));
+    assert.equal(res.body.error.code, 'ENROLLED_CLIENT_NOT_FOUND');
+    assert.equal(JSON.stringify(res.body).includes('Banglore'), false);
+  }
+  assert.equal((await history(member._id, memberToken)).status, 403);
+  assert.equal((await server.request('GET', `/api/coach/clients/${member._id}/questionnaires`)).status, 401);
+});
