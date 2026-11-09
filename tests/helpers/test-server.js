@@ -26,6 +26,13 @@ import CoachTransformation from '../../src/models/coach-transformation.model.js'
 import Post from '../../src/models/post.model.js';
 import PostLike from '../../src/models/post-like.model.js';
 import PostSave from '../../src/models/post-save.model.js';
+import {
+  BrandAmbassadorActivity,
+  BrandAmbassadorCoupon,
+  BrandAmbassadorPayout,
+  BrandAmbassadorReferral,
+  BrandAmbassadorSequence,
+} from '../../src/models/brand-ambassador.model.js';
 
 /**
  * Integration tests run against a dedicated database on the configured cluster
@@ -65,6 +72,10 @@ export const connectTestDb = async () => {
     Post.syncIndexes(),
     PostLike.syncIndexes(),
     PostSave.syncIndexes(),
+    BrandAmbassadorCoupon.syncIndexes(),
+    BrandAmbassadorReferral.syncIndexes(),
+    BrandAmbassadorActivity.syncIndexes(),
+    BrandAmbassadorPayout.syncIndexes(),
   ]);
 };
 
@@ -93,6 +104,11 @@ export const clearTestDb = async () => {
     Post.deleteMany({}),
     PostLike.deleteMany({}),
     PostSave.deleteMany({}),
+    BrandAmbassadorCoupon.deleteMany({}),
+    BrandAmbassadorReferral.deleteMany({}),
+    BrandAmbassadorSequence.deleteMany({}),
+    BrandAmbassadorActivity.deleteMany({}),
+    BrandAmbassadorPayout.deleteMany({}),
   ]);
 };
 

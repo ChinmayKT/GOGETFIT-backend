@@ -172,6 +172,12 @@ const enrolledClientSchema = new mongoose.Schema(
      * it matched none; `legacy.couponCode` keeps what was typed either way.
      */
     couponId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
+    /**
+     * The Brand Ambassador code this order was bought with, set by the backend
+     * from its own coupon record at purchase - never from the client. Its
+     * referral lives in brand_ambassador_referrals (one per order).
+     */
+    ambassadorCouponId: { type: mongoose.Schema.Types.ObjectId, ref: 'BrandAmbassadorCoupon', default: null },
 
     // --- the enrollment itself ---
     /** t_enrollment.enroll_date - when the purchase happened. */

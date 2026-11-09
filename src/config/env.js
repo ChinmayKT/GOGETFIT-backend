@@ -51,6 +51,19 @@ export const env = {
     memberPublishing: bool(process.env.FEED_MEMBER_PUBLISHING, false),
   },
 
+  // Brand Ambassador programme policy. Each ambassador's discount and
+  // commission are copied onto their record at registration, so changing these
+  // affects new ambassadors only - never an existing code or a past referral.
+  ambassador: {
+    discountPercent: int(process.env.AMBASSADOR_DISCOUNT_PERCENT, 5),
+    // The rate a new ambassador starts on, within the published range.
+    commissionPercent: int(process.env.AMBASSADOR_COMMISSION_PERCENT, 5),
+    commissionMinPercent: int(process.env.AMBASSADOR_COMMISSION_MIN_PERCENT, 5),
+    commissionMaxPercent: int(process.env.AMBASSADOR_COMMISSION_MAX_PERCENT, 10),
+    tdsPercent: int(process.env.AMBASSADOR_TDS_PERCENT, 10),
+    payoutDay: int(process.env.AMBASSADOR_PAYOUT_DAY, 7),
+  },
+
   // Business switch from spec section 12: migration-only vs. open registration.
   allowNewRegistrations: bool(process.env.ALLOW_NEW_REGISTRATIONS, true),
 

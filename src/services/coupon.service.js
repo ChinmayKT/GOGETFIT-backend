@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+import { BrandAmbassadorCoupon } from '../models/brand-ambassador.model.js';
 import Coupon from '../models/coupon.model.js';
 import User from '../models/user.model.js';
 import { now } from '../utils/clock.js';
@@ -122,8 +123,11 @@ const mapDuplicate = (error, code) => {
   throw error;
 };
 
+/** Ambassador codes live in their own collection but share the code space checkout reads. */
+const isAmbassadorCode = (code) => BrandAmbassadorCoupon.exists({ couponCode: code });
+
 export const createCoupon = async (input, adminId) => {
-  if (await Coupon.exists({ code: input.code })) throw codeTaken(input.code);
+  if ((await Coupon.exists({ code: input.code })) || (await isAmbassadorCode(input.code))) throw codeTaken(input.code);
   try {
     const created = await Coupon.create({
       ...input,
@@ -146,7 +150,11 @@ export const updateCoupon = async (id, patch, adminId) => {
   const validTo = patch.validTo ?? current.validTo;
   assertDateOrder(validFrom, validTo);
 
-  if (patch.code && patch.code !== current.code && (await Coupon.exists({ _id: { $ne: current._id }, code: patch.code }))) {
+  if (
+    patch.code &&
+    patch.code !== current.code &&
+    ((await Coupon.exists({ _id: { $ne: current._id }, code: patch.code })) || (await isAmbassadorCode(patch.code)))
+  ) {
     throw codeTaken(patch.code);
   }
 

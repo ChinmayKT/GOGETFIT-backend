@@ -10,6 +10,7 @@ import User from '../models/user.model.js';
 import { getCouponStatus } from '../utils/coupon-status.js';
 import { ERROR_CODES, badRequest, conflict, notFound } from '../utils/errors.js';
 import { assertCoachHasSlots, consumeSlot, prepareBooking } from './coach-capacity.service.js';
+import { recordReferralForEnrollment, resolveAmbassadorCoupon } from './brand-ambassador.service.js';
 import { priceAfterCoupon } from './enrolled-client.service.js';
 import { toMemberCoach } from './coach.service.js';
 import { toMemberPlan } from './gogetfit-plan.service.js';
@@ -99,7 +100,7 @@ export const assertPurchasable = async ({ coachId, planId }, session = null) => 
  * today's calendar date. A private coupon is never offered to a member - it is
  * the admin's to apply.
  */
-export const resolveMemberCoupon = async (couponId, { code = null, session = null, at = new Date() } = {}) => {
+export const resolveMemberCoupon = async (couponId, { code = null, session = null, at = new Date(), userId = null } = {}) => {
   if (!couponId && !code) return null;
 
   const filter = couponId
@@ -109,6 +110,11 @@ export const resolveMemberCoupon = async (couponId, { code = null, session = nul
   const query = Coupon.findOne(filter);
   const coupon = await (session ? query.session(session) : query).lean();
 
+  // Not an admin coupon: it may be a Brand Ambassador code, typed by the member.
+  if (!coupon && !couponId) {
+    const ambassador = await resolveAmbassadorCoupon(code, { userId, session });
+    if (ambassador) return ambassador;
+  }
   if (!coupon) throw notFound(ERROR_CODES.COUPON_NOT_FOUND, 'Coupon not found');
   if (coupon.visibility !== 'public') {
     // Not "forbidden": a member must not learn that a private code exists.
@@ -199,14 +205,22 @@ export const quoteCartItem = async (userId, cartItemId, { couponId = null, coupo
   if (!item) return null;
 
   const { plan } = await assertPurchasable({ coachId: item.coachId, planId: item.planId });
-  const coupon = await resolveMemberCoupon(couponId, { code: couponCode, at });
+  const coupon = await resolveMemberCoupon(couponId, { code: couponCode, at, userId });
   const pricing = priceAfterCoupon(plan.pricing.basePrice, coupon?.discount?.value ?? 0);
 
   const doc = await CartItem.findById(item._id).populate(POPULATE).lean();
   return toCartItem(doc, {
     ...pricing,
     currency: PLAN_CURRENCY,
-    coupon: coupon ? { id: String(coupon._id), code: coupon.code, discountPercent: coupon.discount?.value ?? 0 } : null,
+    coupon: coupon
+      ? {
+          // An ambassador code has no admin-coupon id; the app sends it back by code.
+          id: coupon._id ? String(coupon._id) : null,
+          code: coupon.code,
+          discountPercent: coupon.discount?.value ?? 0,
+          kind: coupon.ambassador ? 'ambassador' : 'coupon',
+        }
+      : null,
   });
 };
 
@@ -265,7 +279,7 @@ export const purchaseCartItem = async (
 
       // Re-validated now, not when the item went into the cart.
       const { plan, coach } = await assertPurchasable({ coachId: item.coachId, planId: item.planId }, session);
-      const coupon = await resolveMemberCoupon(couponId, { code: couponCode, session, at });
+      const coupon = await resolveMemberCoupon(couponId, { code: couponCode, session, at, userId: user._id });
 
       pricing = priceAfterCoupon(plan.pricing.basePrice, coupon?.discount?.value ?? 0);
 
@@ -278,6 +292,7 @@ export const purchaseCartItem = async (
             planId: plan._id,
             coachId: coach._id,
             couponId: coupon?._id ?? null,
+            ambassadorCouponId: coupon?.ambassador?._id ?? null,
             enrollDate: at,
             capacityAccountingMonth,
             // Set when the member starts the plan, exactly as the legacy flow did.
@@ -328,6 +343,10 @@ export const purchaseCartItem = async (
       if (removed.deletedCount !== 1) {
         throw badRequest(ERROR_CODES.CART_ITEM_NOT_ACTIVE, 'This cart item is no longer active');
       }
+
+      // An ambassador code: its one referral, in the same transaction, so an
+      // order and its attribution are never one without the other.
+      if (coupon?.ambassador) await recordReferralForEnrollment(enrollment._id, { session, at });
 
       createdId = enrollment._id;
     });

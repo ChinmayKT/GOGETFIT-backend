@@ -38,6 +38,17 @@ import {
 } from '../controllers/gogetfit-plan.controller.js';
 import { getCoupon, getCoupons, patchCoupon, postCoupon } from '../controllers/coupon.controller.js';
 import {
+  getAdminAmbassador,
+  getAdminAmbassadorActivity,
+  getAdminAmbassadorPayouts,
+  getAdminAmbassadorReferrals,
+  getAdminAmbassadors,
+  getAdminReferral,
+  patchAdminAmbassadorCommission,
+  patchAdminAmbassadorStatus,
+  postAdminAmbassadorPayout,
+} from '../controllers/brand-ambassador.controller.js';
+import {
   deleteFood,
   deleteFoodImage,
   getFood,
@@ -187,5 +198,17 @@ router.get('/coupons', getCoupons);
 router.post('/coupons', postCoupon);
 router.get('/coupons/:id', getCoupon);
 router.patch('/coupons/:id', patchCoupon);
+
+// Brand Ambassadors: profiles, full referral transactions, commission ledger,
+// audit trail. Admin-only like everything here; ambassadors see aggregates only.
+router.get('/ambassadors', getAdminAmbassadors);
+router.get('/ambassadors/:id', getAdminAmbassador);
+router.patch('/ambassadors/:id/status', patchAdminAmbassadorStatus);
+router.get('/ambassadors/:id/referrals', getAdminAmbassadorReferrals);
+router.patch('/ambassadors/:id/commission', patchAdminAmbassadorCommission);
+router.get('/ambassadors/:id/payouts', getAdminAmbassadorPayouts);
+router.post('/ambassadors/:id/payouts', postAdminAmbassadorPayout);
+router.get('/ambassadors/:id/activity', getAdminAmbassadorActivity);
+router.get('/ambassador-referrals/:id', getAdminReferral);
 
 export default router;

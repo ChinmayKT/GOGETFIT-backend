@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import adminRoutes from './admin.routes.js';
+import ambassadorRoutes from './ambassador.routes.js';
 import authRoutes from './auth.routes.js';
 import coachRoutes from './coach.routes.js';
 import coachWorkspaceRoutes from './coach-workspace.routes.js';
@@ -26,6 +27,8 @@ router.use('/coaches', coachRoutes);
 router.use('/coach', coachWorkspaceRoutes);
 // The Feed: reading, likes and saves for any signed-in account.
 router.use('/feed', feedRoutes);
+// The signed-in user's own Brand Ambassador profile and registration.
+router.use('/ambassadors', ambassadorRoutes);
 // Admin Portal surface. Authentication and role checks live inside.
 router.use('/admin', adminRoutes);
 
