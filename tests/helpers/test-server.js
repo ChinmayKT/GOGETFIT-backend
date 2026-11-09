@@ -23,6 +23,9 @@ import DailyUpdate from '../../src/models/daily-update.model.js';
 import GoGetFitCoins from '../../src/models/gogetfit-coins.model.js';
 import Streak from '../../src/models/streak.model.js';
 import CoachTransformation from '../../src/models/coach-transformation.model.js';
+import Post from '../../src/models/post.model.js';
+import PostLike from '../../src/models/post-like.model.js';
+import PostSave from '../../src/models/post-save.model.js';
 
 /**
  * Integration tests run against a dedicated database on the configured cluster
@@ -59,6 +62,9 @@ export const connectTestDb = async () => {
     DailyUpdate.syncIndexes(),
     Streak.syncIndexes(),
     GoGetFitCoins.syncIndexes(),
+    Post.syncIndexes(),
+    PostLike.syncIndexes(),
+    PostSave.syncIndexes(),
   ]);
 };
 
@@ -84,6 +90,9 @@ export const clearTestDb = async () => {
     GoGetFitCoins.deleteMany({}),
     WeeklyUpdate.deleteMany({}),
     CoachTransformation.deleteMany({}),
+    Post.deleteMany({}),
+    PostLike.deleteMany({}),
+    PostSave.deleteMany({}),
   ]);
 };
 

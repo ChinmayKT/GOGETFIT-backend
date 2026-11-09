@@ -45,6 +45,12 @@ export const env = {
     maxVideoUploadBytes: int(process.env.MAX_VIDEO_UPLOAD_BYTES, 50 * 1024 * 1024),
   },
 
+  // Feed capabilities. Members may publish only once this is switched on; the
+  // backend refuses their posts until then, whatever the app shows.
+  feed: {
+    memberPublishing: bool(process.env.FEED_MEMBER_PUBLISHING, false),
+  },
+
   // Business switch from spec section 12: migration-only vs. open registration.
   allowNewRegistrations: bool(process.env.ALLOW_NEW_REGISTRATIONS, true),
 

@@ -4,6 +4,7 @@ import adminRoutes from './admin.routes.js';
 import authRoutes from './auth.routes.js';
 import coachRoutes from './coach.routes.js';
 import coachWorkspaceRoutes from './coach-workspace.routes.js';
+import feedRoutes from './feed.routes.js';
 import foodRoutes from './food.routes.js';
 import freeDietPlanRoutes from './free-diet-plan.routes.js';
 import planRoutes from './plan.routes.js';
@@ -23,6 +24,8 @@ router.use('/plans', planRoutes);
 router.use('/coaches', coachRoutes);
 // The signed-in coach's own workspace (coach role only).
 router.use('/coach', coachWorkspaceRoutes);
+// The Feed: reading, likes and saves for any signed-in account.
+router.use('/feed', feedRoutes);
 // Admin Portal surface. Authentication and role checks live inside.
 router.use('/admin', adminRoutes);
 

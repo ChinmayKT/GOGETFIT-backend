@@ -10,6 +10,7 @@ import { getMyDietPlan, getMyDietPlanHistory } from '../controllers/diet-plan.co
 import { getMyWorkoutPlan, getMyWorkoutPlans } from '../controllers/workout-plan.controller.js';
 import { getMyFoodLog, getMyFoodLogHistory, putMyFoodLog, putMyFoodLogMealImage } from '../controllers/food-log.controller.js';
 import { getMyDailyUpdate, getMyDailyUpdates, getMyRewards, putMyDailyUpdate } from '../controllers/daily-update.controller.js';
+import { getMySavedPosts } from '../controllers/feed.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
 import {
@@ -61,6 +62,8 @@ router.get('/me/daily-updates', requireAuth, getMyDailyUpdates);
 router.get('/me/daily-updates/:date', requireAuth, getMyDailyUpdate);
 router.put('/me/daily-updates/:date', requireAuth, putMyDailyUpdate);
 router.get('/me/rewards', requireAuth, getMyRewards);
+// The Feed posts this account saved (private).
+router.get('/me/saved-posts', requireAuth, getMySavedPosts);
 router.patch('/me/profile', requireAuth, patchProfile);
 
 // The avatar is always editable by its owner, independent of the email lock.

@@ -34,7 +34,17 @@ import {
 } from '../controllers/workout-plan.controller.js';
 import { postCoachTransformation } from '../controllers/coach-transformation.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
-import { rawImageBody } from '../middleware/upload.middleware.js';
+import { rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
+import { rateLimit } from '../middleware/rate-limit.middleware.js';
+import {
+  getMyPosts,
+  patchPost,
+  postDraft,
+  postPublish,
+  putPostMedia,
+  putPostThumbnail,
+  removePost,
+} from '../controllers/feed.controller.js';
 
 /**
  * The Coach Workspace API: /api/coach/*. Only signed-in users holding the
@@ -47,6 +57,20 @@ const router = Router();
 router.use(requireAuth, requireRole(ROLE_COACH));
 
 router.get('/dashboard', getDashboard);
+
+// Feed authoring: draft -> upload each file -> publish. Limits are per account.
+const HOUR = 60 * 60 * 1000;
+const perAccount = (name, limit) => rateLimit({ limit, windowMs: HOUR, keys: (req) => [`${name}:${req.user._id}`] });
+// The body parser follows the declared type; the bytes are still checked after.
+const feedMediaBody = (req, res, next) => (req.is('video/mp4') ? rawVideoBody : rawImageBody)(req, res, next);
+
+router.get('/feed/posts', getMyPosts);
+router.post('/feed/posts', perAccount('feed-draft', 30), postDraft);
+router.put('/feed/posts/:id/media/:index', perAccount('feed-upload', 300), feedMediaBody, putPostMedia);
+router.put('/feed/posts/:id/media/:index/thumbnail', perAccount('feed-upload', 300), rawImageBody, putPostThumbnail);
+router.post('/feed/posts/:id/publish', perAccount('feed-publish', 60), postPublish);
+router.patch('/feed/posts/:id', patchPost);
+router.delete('/feed/posts/:id', removePost);
 // The coach's own clients, one row per member (their current/latest cycle).
 router.get('/clients', getClients);
 // One client's coaching cycles with this coach, current/latest first.

@@ -78,6 +78,12 @@ export const ERROR_CODES = {
   UNSUPPORTED_VIDEO_TYPE: 'UNSUPPORTED_VIDEO_TYPE',
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   NOT_FOUND: 'NOT_FOUND',
+  // Feed: an unknown, hidden or someone else's post; a published post's media;
+  // a draft missing media; an account that may not publish (yet).
+  POST_NOT_FOUND: 'POST_NOT_FOUND',
+  POST_NOT_EDITABLE: 'POST_NOT_EDITABLE',
+  POST_INCOMPLETE: 'POST_INCOMPLETE',
+  POST_PUBLISHING_DISABLED: 'POST_PUBLISHING_DISABLED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 };
 
