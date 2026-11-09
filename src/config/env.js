@@ -17,6 +17,11 @@ export const env = {
 
   mongoUri: process.env.MONGODB_URI,
 
+  // Browser origins (the Admin Portal) allowed to call the API with CORS,
+  // comma-separated exact origins, e.g. http://13.233.157.200:4173. The local
+  // Vite dev/preview origins are added automatically outside production.
+  corsAllowedOrigins: process.env.CORS_ALLOWED_ORIGINS || '',
+
   jwt: {
     secret: process.env.JWT_SECRET,
     expiresIn: process.env.JWT_EXPIRES_IN || '30d',

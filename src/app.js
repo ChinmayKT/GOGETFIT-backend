@@ -7,11 +7,17 @@ import mongoose from 'mongoose';
 import env from './config/env.js';
 import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
+import { createCorsMiddleware, resolveAllowedOrigins } from './middleware/cors.middleware.js';
 
 const app = express();
 
 // Gzip for responses over 1 KB whose type compresses (JSON, text). Images and
 // video are already compressed and pass through untouched.
+app.use(
+  createCorsMiddleware(
+    resolveAllowedOrigins({ configured: env.corsAllowedOrigins, isProduction: env.isProduction }),
+  ),
+);
 app.use(compression());
 app.use(express.json());
 
