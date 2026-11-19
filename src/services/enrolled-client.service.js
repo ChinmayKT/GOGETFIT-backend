@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 import Coach from '../models/coach.model.js';
 import Coupon from '../models/coupon.model.js';
-import EnrolledClient, { ENROLLMENT_SOURCE_ADMIN_MANUAL, enrollmentStatus } from '../models/enrolled-client.model.js';
+import EnrolledClient, { ENROLLMENT_SOURCE_ADMIN_MANUAL, enrollmentStatus, notEndedCutoff } from '../models/enrolled-client.model.js';
 import GogetfitPlan from '../models/gogetfit-plan.model.js';
 import { ROLE_CLIENT, mergeRoles } from '../constants/roles.js';
 import User from '../models/user.model.js';
@@ -232,9 +232,9 @@ export const buildMatch = ({ userId, coachId, planId, couponId, status, hasStart
   if (status === 'deleted') match.isDeleted = true;
   else if (status === 'not_started') Object.assign(match, { isDeleted: { $ne: true }, hasStarted: false });
   else if (status === 'active') {
-    Object.assign(match, { isDeleted: { $ne: true }, hasStarted: true, endDate: { $gte: now } });
+    Object.assign(match, { isDeleted: { $ne: true }, hasStarted: true, endDate: { $gte: notEndedCutoff(now) } });
   } else if (status === 'inactive') {
-    Object.assign(match, { isDeleted: { $ne: true }, hasStarted: true, endDate: { $lt: now } });
+    Object.assign(match, { isDeleted: { $ne: true }, hasStarted: true, endDate: { $lt: notEndedCutoff(now) } });
   }
 
   return match;
@@ -253,7 +253,7 @@ export const currentFirstStages = (now = new Date()) => [
         $cond: [
           { $eq: ['$isDeleted', true] },
           2,
-          { $cond: [{ $and: ['$hasStarted', { $gte: ['$endDate', now] }] }, 0, 1] },
+          { $cond: [{ $and: ['$hasStarted', { $gte: ['$endDate', notEndedCutoff(now)] }] }, 0, 1] },
         ],
       },
     },

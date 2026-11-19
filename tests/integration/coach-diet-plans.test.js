@@ -156,7 +156,12 @@ test('a day resolves to the same plan the client sees, with the full content', a
     const coach = (await onDay(enrollment._id, date, token)).body.data;
     const member = (await server.request('GET', `/api/users/me/diet-plan?date=${date}`, { token: tokenFor(chethan) })).body.data;
     assert.equal(coach.dietPlan?.planId ?? null, planId, date);
-    assert.deepEqual(coach.dietPlan, member.dietPlan, date);
+    // The same plan - except the coach's Set Calorie Intake, which the member
+    // sees only during an active plan (this cycle has no started days).
+    const restricted = ['coachGivenTargets', 'coachTargetsSetAt', 'effectiveTargets', 'targetsSource'];
+    const planPart = (view) => (view ? Object.fromEntries(Object.entries(view).filter(([k]) => !restricted.includes(k))) : view);
+    assert.deepEqual(planPart(coach.dietPlan), planPart(member.dietPlan), date);
+    if (member.dietPlan) for (const k of restricted) assert.equal(member.dietPlan[k], null, `${date} ${k}`);
   }
   const p = (await onDay(enrollment._id, '2024-09-14', token)).body.data.dietPlan;
   assert.equal(p.meals[0].foods[0].food.image.url, '/uploads/foods/rice.jpg');

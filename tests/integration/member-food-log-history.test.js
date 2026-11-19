@@ -9,7 +9,7 @@ import FoodLog from '../../src/models/food-log.model.js';
 import User from '../../src/models/user.model.js';
 import { submitFoodLog } from '../../src/services/food-log.service.js';
 import { startOfBusinessDay } from '../../src/utils/business-date.js';
-import { clearTestDb, connectTestDb, disconnectTestDb, startTestServer } from '../helpers/test-server.js';
+import { clearTestDb, connectTestDb, disconnectTestDb, seedActivePlan, startTestServer } from '../helpers/test-server.js';
 
 /**
  * Food History - GET /api/users/me/food-log/history and the day read
@@ -46,6 +46,8 @@ beforeEach(async () => {
   await clearTestDb();
   member = await seedUser('Chethan');
   other = await seedUser('Bob');
+  // Food logs and meal photos only during an active coaching plan.
+  await Promise.all([seedActivePlan(member), seedActivePlan(other)]);
   rice = await Food.create({ name: 'Rice', foodType: 'Vegetarian', servingUnit: 'Grams', servingQuantity: 100, calories: 113, fat: 3.5, carbs: 19, protein: 2 });
 });
 

@@ -1,6 +1,5 @@
 import env from '../config/env.js';
 import DailyUpdate, { DAILY_UPDATE_DAILY_SUBMISSIONS } from '../models/daily-update.model.js';
-import EnrolledClient from '../models/enrolled-client.model.js';
 import FoodLog from '../models/food-log.model.js';
 import Questionnaire from '../models/questionnaire.model.js';
 import User from '../models/user.model.js';
@@ -8,7 +7,7 @@ import { calculateAge } from '../utils/age.js';
 import { businessDayOf, isCalendarDay } from '../utils/business-date.js';
 import { ERROR_CODES, badRequest, conflict, notFound, tooManyRequests } from '../utils/errors.js';
 import { clientOfCoachEnrollment } from './diet-plan.service.js';
-import { listMemberEnrollments } from './member-enrollment.service.js';
+import { planAccessOf, planNotActive } from './plan-lifecycle.service.js';
 import { rewardDailyUpdateSafely } from './rewards.service.js';
 import { CALORIE_OUT_PARTS } from '../validators/daily-update.validator.js';
 
@@ -86,12 +85,15 @@ export const profileSnapshot = async (user, enrollmentId) => {
   };
 };
 
-/** The member's active enrollment with its coach and plan ids, or nulls. */
-const currentEnrollmentIds = async (userId, now) => {
-  const { current } = await listMemberEnrollments(userId, now);
-  if (!current) return { enrollmentId: null, coachId: null, planId: null };
-  const doc = await EnrolledClient.findById(current.id, { coachId: 1, planId: 1 }).lean();
-  return { enrollmentId: doc?._id ?? null, coachId: doc?.coachId ?? null, planId: doc?.planId ?? null };
+/**
+ * [log] is a submitted Food Intake with what was eaten: calories, and fat /
+ * carbs / protein - the app's own rule for offering Daily Update.
+ */
+export const intakeSubmitted = (log) => {
+  const c = log?.consumed;
+  return Boolean(
+    log?.submissionCount >= 1 && c && c.calories > 0 && (c.fat ?? 0) + (c.carbs ?? 0) + (c.protein ?? 0) > 0,
+  );
 };
 
 const toView = (doc) =>
@@ -127,6 +129,12 @@ export const getDailyUpdateForDay = async (userId, { date, now = new Date() } = 
  * place - one record per member per day, never another day's: a past day is
  * read-only (409), as it is in the app.
  *
+ * Only during an active coaching plan (403 INTAKE_PLAN_NOT_ACTIVE), and only
+ * after today's Food Intake was submitted under that plan's enrollment with
+ * calories and macros (409 DAILY_UPDATE_INTAKE_REQUIRED) - both from server
+ * records, nothing the app sends. A refused request saves, counts and
+ * rewards nothing.
+ *
  * Calorie In is read from the day's food log here, never taken from the app;
  * the Calorie Out total and the energy balance are summed here from the parts.
  */
@@ -137,6 +145,10 @@ export const submitDailyUpdate = async (userId, date, input, { now = new Date() 
   if (date !== today) {
     throw conflict(ERROR_CODES.DAILY_UPDATE_DAY_CLOSED, 'Only today\'s Daily Update can be submitted');
   }
+  // The plan authorizing today (the shared lifecycle rule); its enrollment,
+  // coach and plan are the record's - never the body's.
+  const { enrollment } = await planAccessOf(user._id, now);
+  if (!enrollment) throw planNotActive('Daily Update is available only during an active coaching plan.');
 
   const existing = await DailyUpdate.findOne({ clientId: user._id, date }).lean();
   // Every successful answer - a retry's too - carries the Streak and Coins
@@ -157,10 +169,17 @@ export const submitDailyUpdate = async (userId, date, input, { now = new Date() 
   // work, and again - atomically - by the save below.
   if ((existing?.submissionCount ?? 0) >= DAILY_UPDATE_DAILY_SUBMISSIONS) throw limitReached();
 
-  const log = await FoodLog.findOne({ clientId: user._id, logDate: date }, { consumed: 1, targets: 1 }).lean();
-  const calorieIn = log ? { consumed: nutrients(log.consumed), targets: nutrients(log.targets) } : null;
+  // Today's Food Intake, submitted under this plan's enrollment, comes first.
+  const log = await FoodLog.findOne(
+    { clientId: user._id, logDate: date, enrollmentId: enrollment._id },
+    { consumed: 1, targets: 1, submissionCount: 1 },
+  ).lean();
+  if (!intakeSubmitted(log)) {
+    throw conflict(ERROR_CODES.DAILY_UPDATE_INTAKE_REQUIRED, "Submit today's Food Intake before your Daily Update");
+  }
+  const calorieIn = { consumed: nutrients(log.consumed), targets: nutrients(log.targets) };
   const { total, energyBalance } = totalsOf(input.calorieOut, calorieIn);
-  const ids = await currentEnrollmentIds(user._id, now);
+  const ids = { enrollmentId: enrollment._id, coachId: enrollment.coachId ?? null, planId: enrollment.planId ?? null };
 
   const set = {
     timezone: env.businessTimezone,

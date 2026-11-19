@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 import Coach from '../models/coach.model.js';
-import EnrolledClient, { enrollmentStatus } from '../models/enrolled-client.model.js';
+import EnrolledClient, { enrollmentLifecycle, enrollmentStatus, notEndedCutoff } from '../models/enrolled-client.model.js';
 import { GROUP_BY_USER_STAGES, LOOKUP_STAGES, buildMatch, currentFirstStages, escapeRegex } from './enrolled-client.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import { getCoachCapacity } from './coach-capacity.service.js';
@@ -35,7 +35,7 @@ const toImageRef = (image) =>
 export const countCoachEnrollments = async (coachId, now = new Date()) => {
   const id = String(coachId);
   const notDeleted = { ...buildMatch({ coachId: id }, now), isDeleted: { $ne: true } };
-  const notEnded = { $or: [{ endDate: null }, { endDate: { $gte: now } }] };
+  const notEnded = { $or: [{ endDate: null }, { endDate: { $gte: notEndedCutoff(now) } }] };
 
   const [totalEnrollments, clientIds, activeClients, pendingClients, endedClients] = await Promise.all([
     EnrolledClient.countDocuments(notDeleted),
@@ -106,6 +106,8 @@ const toCoachClientRow = (doc, now) => ({
 const toWorkspaceClientRow = (doc, now) => ({
   enrollmentId: String(doc._id),
   status: enrollmentStatus(doc, now),
+  /** not_started | scheduled | active | completed (enrollmentLifecycle). */
+  lifecycle: enrollmentLifecycle(doc, now),
   hasStarted: Boolean(doc.hasStarted),
   enrollDate: doc.enrollDate ? doc.enrollDate.toISOString() : null,
   startDate: doc.startDate ? doc.startDate.toISOString() : null,
@@ -120,6 +122,7 @@ const toWorkspaceClientRow = (doc, now) => ({
   plan: {
     id: doc.plan ? String(doc.plan._id) : (doc.planId ? String(doc.planId) : null),
     name: doc.plan?.name ?? null,
+    durationWeeks: doc.plan?.durationWeeks ?? null,
     image: toImageRef(doc.plan?.image),
   },
   // Whether the member has submitted this cycle's questionnaire (status

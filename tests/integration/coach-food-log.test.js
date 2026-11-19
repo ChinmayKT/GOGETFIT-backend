@@ -10,7 +10,7 @@ import FoodLog from '../../src/models/food-log.model.js';
 import GogetfitPlan from '../../src/models/gogetfit-plan.model.js';
 import User from '../../src/models/user.model.js';
 import { submitFoodLog } from '../../src/services/food-log.service.js';
-import { clearTestDb, connectTestDb, disconnectTestDb, startTestServer } from '../helpers/test-server.js';
+import { ACTIVE_PLAN, clearTestDb, connectTestDb, disconnectTestDb, seedActivePlan, startTestServer } from '../helpers/test-server.js';
 
 /**
  * A coach's read-only view of a client's Food Log History -
@@ -37,7 +37,7 @@ const seedUser = (roles, name) => {
   return User.create({ phone: { raw: phone, normalized: phone }, profile: { name }, roles, status: 'active' });
 };
 const enroll = (user, c, extra = {}) =>
-  EnrolledClient.create({ userId: user._id, planId: plan._id, coachId: c._id, enrollDate: new Date('2026-09-01'), hasStarted: true, isDeleted: false, ...extra });
+  EnrolledClient.create({ userId: user._id, planId: plan._id, coachId: c._id, enrollDate: new Date('2026-09-01'), ...ACTIVE_PLAN, isDeleted: false, ...extra });
 const noonOn = (day) => new Date(`${day}T06:30:00.000Z`);
 const logDay = (user, day, grams) =>
   submitFoodLog(
@@ -78,7 +78,9 @@ test('the client\'s submitted days, newest first - theirs only', async () => {
   await logDay(member, '2026-10-14', 100);
   await logDay(member, '2026-10-17', 200);
   await logDay(other, '2026-10-16', 100);
-  await logDay(coachUser, '2026-10-15', 100); // the coach's own log, as a member
+  // The coach's own log, as a member (on a plan of their own).
+  await seedActivePlan(coachUser);
+  await logDay(coachUser, '2026-10-15', 100);
 
   const res = await history(enrollment._id);
   assert.equal(res.status, 200, JSON.stringify(res.body));

@@ -152,12 +152,18 @@ test('search matches name and brand, case-insensitively, across the collection',
   assert.equal(paged.body.data.foods.length, 1);
 });
 
-test('regex metacharacters in the search term are escaped, not executed', async () => {
+test('regex metacharacters in the search term are never executed; brackets are punctuation', async () => {
   await seedMigratedFood(1, { name: 'Rice (Cooked)' });
   await seedMigratedFood(2, { name: 'Rice Cooked' });
+  await seedMigratedFood(3, { name: 'Dal' });
 
+  // Searched by its word: brackets do not change what matches.
   const res = await list('?search=' + encodeURIComponent('(Cooked)'));
-  assert.deepEqual(res.body.data.foods.map((f) => f.name), ['Rice (Cooked)']);
+  assert.deepEqual(res.body.data.foods.map((f) => f.name), ['Rice (Cooked)', 'Rice Cooked']);
+  // A regex as input is never run as one: punctuation alone is no search.
+  const pattern = await list('?search=' + encodeURIComponent('.*['));
+  assert.equal(pattern.status, 200);
+  assert.equal(pattern.body.data.pagination.total, 3);
 });
 
 test('food type and unit filters use the new vocabulary and run server-side', async () => {

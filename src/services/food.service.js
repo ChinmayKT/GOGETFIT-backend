@@ -85,15 +85,37 @@ export const buildFoodFilter = ({ search, foodType, unit, status } = {}) => {
   if (foodType) filter.foodType = foodType;
   if (unit) filter.servingUnit = unit;
 
-  const term = String(search ?? '').trim();
-  if (term !== '') {
-    // Name or brand, case-insensitive, matched in MongoDB across the whole
-    // collection - never against the page already loaded in the browser.
-    const pattern = new RegExp(escapeRegex(term), 'i');
-    filter.$or = [{ name: pattern }, { brand: pattern }];
+  // Every word of the search must appear somewhere in the food's text - its
+  // name (brackets included), brand or comments - in any order, as part of a
+  // word ("prot" finds "protein"), case-insensitively. Matched in MongoDB
+  // across the whole collection, never against the page already loaded.
+  const words = foodSearchWords(search);
+  if (words.length > 0) {
+    filter.$and = words.map((word) => {
+      const pattern = new RegExp(escapeRegex(word), 'i');
+      return { $or: SEARCHABLE_FOOD_FIELDS.map((field) => ({ [field]: pattern })) };
+    });
   }
   return filter;
 };
+
+/** The food text a search looks in: name (with its brackets), brand, comments. */
+export const SEARCHABLE_FOOD_FIELDS = ['name', 'brand', 'notes'];
+
+/**
+ * A search's words: lower-cased, split on anything that is not a letter (with
+ * its combining marks - Devanagari vowel signs) or a digit, so "Paneer (Low-Fat)" and "  paneer   low fat " are the same three
+ * words. Punctuation alone is no search. The app's Favourites uses the same
+ * rule (food_search.dart).
+ * ponytail: capped at 8 words - each is a regex over three fields, unindexed;
+ * fine for a ~1k-food catalogue, a text index if it grows by orders.
+ */
+export const foodSearchWords = (search) =>
+  String(search ?? '')
+    .toLowerCase()
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .filter(Boolean)
+    .slice(0, 8);
 
 /**
  * Multi-level nutrition sort, in MongoDB, before paging: one compound $sort

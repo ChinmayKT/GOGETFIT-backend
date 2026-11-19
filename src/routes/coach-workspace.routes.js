@@ -8,6 +8,7 @@ import {
   getDashboard,
   getEnrollmentDietPlanCreateData,
   getEnrollmentQuestionnaire,
+  postStartPlan,
 } from '../controllers/coach-workspace.controller.js';
 import { getClientBodyMetricsForCoach, getEnrollmentBodyMetricsForCoach } from '../controllers/body-metrics.controller.js';
 import {
@@ -85,6 +86,8 @@ router.get('/clients/:userId/weekly-updates', getCoachClientWeeklyUpdatesAll);
 router.post('/clients/:userId/transformations', rawImageBody, postCoachTransformation);
 // The submitted questionnaire of one of the coach's own enrollments.
 router.get('/enrollments/:enrollmentId/questionnaire', getEnrollmentQuestionnaire);
+// Start Plan: the plan begins the next day (IST); dates saved on the enrollment.
+router.post('/enrollments/:enrollmentId/start', postStartPlan);
 // The submitted Body Metrics of one of the coach's own enrollments.
 router.get('/enrollments/:enrollmentId/body-metrics', getEnrollmentBodyMetricsForCoach);
 // The submitted Weekly Updates of one of the coach's own enrollments, newest first.

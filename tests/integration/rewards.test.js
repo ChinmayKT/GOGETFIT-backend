@@ -6,11 +6,13 @@ import jwt from 'jsonwebtoken';
 import Coach from '../../src/models/coach.model.js';
 import DailyUpdate from '../../src/models/daily-update.model.js';
 import EnrolledClient from '../../src/models/enrolled-client.model.js';
+import Food from '../../src/models/food.model.js';
 import GoGetFitCoins from '../../src/models/gogetfit-coins.model.js';
 import GogetfitPlan from '../../src/models/gogetfit-plan.model.js';
 import Streak from '../../src/models/streak.model.js';
 import User from '../../src/models/user.model.js';
 import { submitDailyUpdate } from '../../src/services/daily-update.service.js';
+import { submitFoodLog } from '../../src/services/food-log.service.js';
 import { businessDayOf } from '../../src/utils/business-date.js';
 import { clearTestDb, connectTestDb, disconnectTestDb, startTestServer } from '../helpers/test-server.js';
 
@@ -27,6 +29,7 @@ let member;
 let other;
 let coach;
 let enrollment;
+let rice;
 
 const tokenFor = (user) => jwt.sign({ sub: String(user._id), type: 'user' }, process.env.JWT_SECRET, { expiresIn: '1h' });
 let seq = 0;
@@ -57,7 +60,24 @@ const body = (extra = {}) => ({
   submissionId: null,
   ...extra,
 });
-const submitOn = (user, day, extra = {}) => submitDailyUpdate(user._id, day, body(extra), { now: noonOn(day) });
+// The day's Food Intake comes first (once per member and day, however many
+// Daily Updates follow it); a Daily Update is never rewarded without it.
+let intakes = new Map();
+const intakeOn = (user, day) => {
+  const key = `${user._id}:${day}`;
+  if (!intakes.has(key)) {
+    intakes.set(
+      key,
+      submitFoodLog(user._id, { meals: [{ meal: 1, foods: [{ entryId: `${day}-a`, foodId: String(rice._id), qty: 100 }] }], memberGoal: null, day: null }, { now: noonOn(day) }),
+    );
+  }
+  return intakes.get(key);
+};
+const submitOn = async (user, day, extra = {}) => {
+  await intakeOn(user, day);
+  return submitDailyUpdate(user._id, day, body(extra), { now: noonOn(day) });
+};
+const dailyUpdateOnly = (user, day) => submitDailyUpdate(user._id, day, body(), { now: noonOn(day) });
 const docs = async (user) => ({
   streaks: await Streak.find({ clientId: user._id }).lean(),
   coins: await GoGetFitCoins.find({ clientId: user._id }).lean(),
@@ -77,6 +97,8 @@ beforeEach(async () => {
   const coachUser = await seedUser(['user', 'coach'], 'Prajwal');
   coach = await Coach.create({ userId: coachUser._id, profile: { level: 'LEVEL 1' } });
   enrollment = await enroll(member);
+  rice = await Food.create({ name: 'Rice', foodType: 'Vegetarian', servingUnit: 'Grams', servingQuantity: 100, calories: 113, fat: 3.5, carbs: 19, protein: 2 });
+  intakes = new Map();
 });
 
 after(async () => {
@@ -167,27 +189,20 @@ test('a failed reward rolls back whole (nothing half-counted); the day\'s next s
   assert.deepEqual((await docs(member)).coins.map((c) => c.balance), [5]);
 });
 
-test('only days of the active plan: before it starts and after it ends earn nothing; coins are kept', async () => {
-  // Before the coach started the plan.
-  assert.equal((await submitOn(member, '2026-09-30')).rewards.rewardAwarded, false);
+test('only days of the active plan: before it starts and after it ends a Daily Update is refused and earns nothing; coins are kept', async () => {
+  const notActive = (e) => e.statusCode === 403 && e.code === 'INTAKE_PLAN_NOT_ACTIVE';
+  // Before the plan's first day (no Intake is possible either).
+  await assert.rejects(dailyUpdateOnly(member, '2026-09-30'), notActive);
   await submitOn(member, '2026-10-01');
-  // The plan has ended (12 weeks from 1 Oct): no reward, and the 5 coins stay.
-  const ended = await submitOn(member, '2026-12-25');
-  assert.equal(ended.rewards.rewardAwarded, false);
-  assert.deepEqual(ended.rewards.coins, { balance: 5, totalEarned: 5 });
-  assert.equal(ended.rewards.currentStreak, 1);
-  // A member with no plan at all: the update saves, no reward, nothing made up.
-  const none = await submitOn(other, '2026-10-01');
-  assert.ok(none.dailyUpdate);
-  assert.deepEqual(none.rewards, {
-    currentStreak: 0,
-    planDays: null,
-    lastUpdatedDate: null,
-    coins: { balance: 0, totalEarned: 0 },
-    rewardAwarded: false,
-    coinsAwarded: 0,
-  });
+  // The plan has ended (its last day is 24 Dec): refused, and the 5 coins stay.
+  await assert.rejects(dailyUpdateOnly(member, '2026-12-25'), notActive);
+  const { streaks, coins } = await docs(member);
+  assert.deepEqual([streaks[0].currentStreak, coins[0].balance, coins[0].totalEarned], [1, 5, 5]);
+  // A member with no plan at all: refused, nothing saved, nothing made up.
+  await assert.rejects(dailyUpdateOnly(other, '2026-10-01'), notActive);
   assert.deepEqual(await docs(other), { streaks: [], coins: [] });
+  assert.equal(await DailyUpdate.countDocuments({ date: { $in: ['2026-09-30', '2026-12-25'] } }), 0);
+  assert.equal(await DailyUpdate.countDocuments({ clientId: other._id }), 0);
 });
 
 test('the count never passes the plan\'s days', async () => {
@@ -232,6 +247,11 @@ test('HTTP: PUT answers with the rewards; GET /users/me/rewards reads them; the 
     hasStarted: true,
     isDeleted: false,
   });
+  const intake = await server.request('PUT', '/api/users/me/food-log', {
+    body: { meals: [{ meal: 1, foods: [{ entryId: 'e1', foodId: String(rice._id), qty: 100 }] }] },
+    token: tokenFor(member),
+  });
+  assert.equal(intake.status, 200, JSON.stringify(intake.body));
   const put = await server.request('PUT', `/api/users/me/daily-updates/${today}`, {
     body: body({ currentStreak: 99, balance: 999, clientId: String(other._id), rewardAwarded: true }),
     token: tokenFor(member),
@@ -249,36 +269,28 @@ test('HTTP: PUT answers with the rewards; GET /users/me/rewards reads them; the 
   assert.equal((await server.request('GET', '/api/users/me/rewards')).status, 401);
 });
 
-test('TEMPORARY (no Start Plan yet): a bought plan not started yet earns, any day, counting on; deleted or odd plans earn nothing; coins kept', async () => {
-  await submitOn(member, '2026-10-01'); // 1 day, 5 coins on the dated plan
+test('a bought plan the coach has not started never earns: its Daily Update is refused, and so is its Intake; coins kept', async () => {
+  await submitOn(member, '2026-10-01'); // 1 day, 5 coins on the started plan
+  const notActive = (e) => e.statusCode === 403 && e.code === 'INTAKE_PLAN_NOT_ACTIVE';
 
-  // Bought, never started - no dates: earns (no day window), the count goes on.
-  await EnrolledClient.updateOne({ _id: enrollment._id }, { $set: { hasStarted: false, startDate: null, endDate: null } });
-  const notStarted = await submitOn(member, '2026-10-10');
-  assert.equal(notStarted.rewards.rewardAwarded, true);
-  assert.equal(notStarted.rewards.currentStreak, 2);
-  assert.equal(notStarted.rewards.planDays, 84);
-  assert.deepEqual(notStarted.rewards.coins, { balance: 10, totalEarned: 10 });
-  assert.equal((await submitOn(member, '2026-10-10', { steps: 1 })).rewards.rewardAwarded, false, 'still once a day');
-  const after = await EnrolledClient.findById(enrollment._id).lean();
-  assert.deepEqual([after.hasStarted, after.startDate, after.endDate], [false, null, null], 'nothing started or dated');
-
-  // Marked started but without a start date, or deleted: nothing earned, coins kept.
+  // Bought, never started - and the odd rows: started without a start date,
+  // or deleted. None is an active plan: nothing saved, nothing earned.
   for (const [i, change] of [
+    { hasStarted: false, startDate: null, endDate: null },
     { hasStarted: true, startDate: null, endDate: new Date('2099-01-01') },
     { isDeleted: true },
   ].entries()) {
     await EnrolledClient.updateOne({ _id: enrollment._id }, { $set: { hasStarted: false, isDeleted: false, startDate: null, endDate: null, ...change } });
-    const res = await submitOn(member, `2026-10-1${i + 1}`);
-    assert.ok(res.dailyUpdate, 'the update still saves');
-    assert.equal(res.rewards.rewardAwarded, false, `case ${i}`);
-    assert.deepEqual(res.rewards.coins, { balance: 10, totalEarned: 10 });
+    const day = `2026-10-1${i}`;
+    await assert.rejects(intakeOn(member, day), notActive, `intake, case ${i}`);
+    await assert.rejects(dailyUpdateOnly(member, day), notActive, `daily update, case ${i}`);
   }
   const { streaks, coins } = await docs(member);
-  assert.deepEqual([streaks.length, coins.length, streaks[0].currentStreak, coins[0].balance], [1, 1, 2, 10]);
+  assert.deepEqual([streaks.length, coins.length, streaks[0].currentStreak, coins[0].balance], [1, 1, 1, 5]);
+  assert.equal(await DailyUpdate.countDocuments({ clientId: member._id }), 1);
 });
 
-test('TEMPORARY: a bought plan not started reads 0 / 84 before its first day, then counts its days (capped at 84)', async () => {
+test('a bought plan not started still reads 0 / 84 (its length), but earns nothing until the coach starts it', async () => {
   await EnrolledClient.updateOne({ _id: enrollment._id }, { $set: { hasStarted: false, startDate: null, endDate: null } });
   const read = await server.request('GET', '/api/users/me/rewards', { token: tokenFor(member) });
   assert.equal(read.status, 200);
@@ -290,13 +302,10 @@ test('TEMPORARY: a bought plan not started reads 0 / 84 before its first day, th
     rewardAwarded: false,
     coinsAwarded: 0,
   });
-  const saved = await submitOn(member, '2026-10-05');
-  assert.equal(saved.rewards.rewardAwarded, true);
-  assert.equal(saved.rewards.currentStreak, 1);
-  assert.equal(saved.rewards.planDays, 84);
-  // A deleted plan is not "current": no plan length, nothing earned.
+  await assert.rejects(dailyUpdateOnly(member, '2026-10-05'), (e) => e.code === 'INTAKE_PLAN_NOT_ACTIVE');
+  assert.deepEqual(await docs(member), { streaks: [], coins: [] });
+  // A deleted plan is not "current": no plan length.
   await EnrolledClient.updateOne({ _id: enrollment._id }, { $set: { isDeleted: true } });
-  await Streak.deleteMany({ clientId: member._id });
   const none = await server.request('GET', '/api/users/me/rewards', { token: tokenFor(member) });
   assert.equal(none.body.data.rewards.planDays, null);
 });

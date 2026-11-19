@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 
+import { businessDayOf, startOfBusinessDay } from '../utils/business-date.js';
 import { LEGACY_SOURCE } from './user.model.js';
 
 /**
@@ -183,14 +184,22 @@ const enrolledClientSchema = new mongoose.Schema(
     /** t_enrollment.enroll_date - when the purchase happened. */
     enrollDate: { type: Date, default: null },
     /**
-     * Set when the member starts the plan, not when they buy it: the legacy
-     * SpawnBooking wrote CURDATE()+1 day. Null while unstarted.
+     * The plan's first day (the instant it begins in the business timezone).
+     * Set when the coach starts the plan, not when it is bought: the day
+     * after the Start click, as the legacy SpawnBooking's CURDATE()+1 day.
+     * Null while unstarted.
      */
     startDate: { type: Date, default: null },
-    /** startDate + the plan's duration in weeks, written by the same legacy call. */
+    /**
+     * The plan's LAST active day, inclusive (stored like startDate). Coach
+     * Start writes startDate + durationWeeks x 7 - 1 day. Migrated rows keep
+     * the legacy startDate + weeks x 7, read with the same inclusive rule.
+     */
     endDate: { type: Date, default: null },
     /** t_enrollment.start_flg - whether the member ever started the plan. */
     hasStarted: { type: Boolean, default: false },
+    /** When the coach clicked Start (null for migrated, manual or unstarted rows). */
+    startedAt: { type: Date, default: null },
     /** t_enrollment.delete_flg. Every migrated row is '0'; the coach list filtered on it. */
     isDeleted: { type: Boolean, default: false },
 
@@ -258,8 +267,35 @@ enrolledClientSchema.index({ endDate: -1 }, { name: 'enrolled_enddate' });
 enrolledClientSchema.index({ 'payment.transactionId': 1 }, { name: 'enrolled_transaction' });
 
 /**
- * The legacy status rule, computed rather than stored because the legacy system
- * never stored it either:
+ * THE plan lifecycle of one enrollment on [now]'s business day - the single
+ * rule behind enrollmentStatus, Intake's permissions, food-log authorization
+ * and coach Start. Calendar days in the business timezone (Asia/Kolkata),
+ * never raw timestamps, and the end day is inclusive: a plan ending on
+ * 10 Feb is active until 23:59:59.999 IST that day and completed from 11 Feb.
+ *
+ *   not_started - bought, the coach has not started it (or it has no dates)
+ *   scheduled   - started, its first day is still ahead
+ *   active      - today is between its first and last day, both included
+ *   completed   - its last day has passed
+ */
+export const enrollmentLifecycle = (doc, now = new Date()) => {
+  if (doc?.isDeleted) return 'deleted';
+  if (!doc?.hasStarted || !doc?.startDate || !doc?.endDate) return 'not_started';
+  const today = businessDayOf(now);
+  if (today < businessDayOf(doc.startDate)) return 'scheduled';
+  return today > businessDayOf(doc.endDate) ? 'completed' : 'active';
+};
+
+/**
+ * The query form of "its last day is not over yet": endDate (the instant its
+ * last day begins) on or after the instant today begins.
+ */
+export const notEndedCutoff = (now = new Date()) => startOfBusinessDay(businessDayOf(now));
+
+/**
+ * The legacy status vocabulary (the admin list and coach counts), from
+ * enrollmentLifecycle: a scheduled plan reads 'active' as the legacy CASE
+ * did, and 'inactive' only once its last day is over.
  *
  *   BookingDAL:  CASE WHEN end_date < NOW() THEN 'inactive' ELSE 'active' END
  *
@@ -268,9 +304,12 @@ enrolledClientSchema.index({ 'payment.transactionId': 1 }, { name: 'enrolled_tra
  * distinguishable, which the legacy read could not do on its own.
  */
 export const enrollmentStatus = (doc, now = new Date()) => {
-  if (doc?.isDeleted) return 'deleted';
-  if (!doc?.hasStarted || !doc?.endDate) return 'not_started';
-  return doc.endDate < now ? 'inactive' : 'active';
+  const lifecycle = enrollmentLifecycle(doc, now);
+  if (lifecycle === 'not_started' && doc?.hasStarted && doc?.endDate) {
+    // A legacy row started without a start date: by its end date alone.
+    return doc.endDate < notEndedCutoff(now) ? 'inactive' : 'active';
+  }
+  return { scheduled: 'active', completed: 'inactive' }[lifecycle] ?? lifecycle;
 };
 
 export const ENROLLMENT_STATUSES = ['active', 'inactive', 'not_started', 'deleted'];

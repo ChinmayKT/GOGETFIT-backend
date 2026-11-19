@@ -12,7 +12,7 @@ import GogetfitPlan from '../../src/models/gogetfit-plan.model.js';
 import User from '../../src/models/user.model.js';
 import { getFoodLogForDay, submitFoodLog } from '../../src/services/food-log.service.js';
 import { addCalendarDays, businessDayOf, startOfBusinessDay } from '../../src/utils/business-date.js';
-import { clearTestDb, connectTestDb, disconnectTestDb, startTestServer } from '../helpers/test-server.js';
+import { ACTIVE_PLAN, clearTestDb, connectTestDb, disconnectTestDb, startTestServer } from '../helpers/test-server.js';
 
 /**
  * Intake food log - GET/PUT /api/users/me/food-log. One document per member
@@ -70,7 +70,7 @@ beforeEach(async () => {
   other = await seedUser(['user', 'client'], 'Bob');
   coachUser = await seedUser(['user', 'coach'], 'Prajwal');
   coach = await Coach.create({ userId: coachUser._id, profile: { level: 'LEVEL 1' } });
-  enrollment = await EnrolledClient.create({ userId: member._id, planId: gp._id, coachId: coach._id, enrollDate: new Date('2025-01-01'), hasStarted: true, isDeleted: false });
+  enrollment = await EnrolledClient.create({ userId: member._id, planId: gp._id, coachId: coach._id, enrollDate: new Date('2025-01-01'), ...ACTIVE_PLAN, isDeleted: false });
   rice = await Food.create({ name: 'Rice', foodType: 'Vegetarian', servingUnit: 'Grams', servingQuantity: 100, calories: 113, fat: 3.5, carbs: 19, protein: 2 });
   whey = await Food.create({ name: 'Whey', foodType: 'Vegetarian', brand: 'MB', servingUnit: 'Scoop', servingQuantity: 1, calories: 120, fat: 2, carbs: 7, protein: 24 });
 });
@@ -180,7 +180,9 @@ test('totals, targets and ids sent by the app are ignored', async () => {
   assert.equal(log.date, today());
   const doc = await FoodLog.findOne().lean();
   assert.equal(String(doc.clientId), String(member._id));
-  assert.equal(doc.coachId, null);
+  // The coach and enrollment are the ones authorizing the plan, never the body's.
+  assert.equal(String(doc.coachId), String(coach._id));
+  assert.equal(String(doc.enrollmentId), String(enrollment._id));
 });
 
 test('targets: the coach\'s intake, else the plan\'s, else the member\'s own goal', async () => {
@@ -269,8 +271,9 @@ test('a migrated plan with no enrollment still applies', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.data.foodLog.targets.calories, 1800);
   const doc = await FoodLog.findOne().lean();
-  assert.equal(doc.enrollmentId, null);
-  assert.equal(doc.coachId, null);
+  // The log still belongs to the enrollment that authorizes the active plan.
+  assert.equal(String(doc.enrollmentId), String(enrollment._id));
+  assert.equal(String(doc.coachId), String(coach._id));
 });
 
 test('only the signed-in member\'s own log, and only with a token', async () => {

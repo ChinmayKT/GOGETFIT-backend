@@ -277,7 +277,7 @@ test('images: 1 and 10 are accepted, 11 is refused; order is kept', async () => 
   assert.match(eleven.body.error.message, /1 to 10 images/);
 });
 
-test('video: one video with a thumbnail publishes; no thumbnail or two videos are refused', async () => {
+test('video: one video with a thumbnail publishes; two videos are refused', async () => {
   const coach = await seedCoach();
   const post = await publishVideo(coach.token);
   assert.equal(post.mediaType, 'video');
@@ -291,12 +291,40 @@ test('video: one video with a thumbnail publishes; no thumbnail or two videos ar
   const two = await api('POST', '/api/coach/feed/posts', coach.token, draftBody({ mediaType: 'video', mediaCount: 2 }));
   assert.equal(two.status, 400);
 
+});
+
+test('video: the thumbnail is optional - without one it publishes with thumbnailUrl null; the video itself is still required', async () => {
+  const coach = await seedCoach();
   const noThumb = await createPostDraft(coach.token, { mediaType: 'video', mediaCount: 1 });
+  // Publishing before the video itself is uploaded is still refused.
+  const early = await api('POST', `/api/coach/feed/posts/${noThumb.id}/publish`, coach.token);
+  assert.equal(early.status, 400);
+  assert.equal(early.body.error.code, 'POST_INCOMPLETE');
+
   await raw('PUT', `/api/coach/feed/posts/${noThumb.id}/media/0`, coach.token, mp4(), 'video/mp4');
   const res = await api('POST', `/api/coach/feed/posts/${noThumb.id}/publish`, coach.token);
-  assert.equal(res.status, 400);
-  assert.equal(res.body.error.code, 'POST_INCOMPLETE');
-  assert.match(res.body.error.message, /thumbnail/);
+  assert.equal(res.status, 200);
+  const [video] = res.body.data.post.media;
+  assert.ok(video.url.endsWith('.mp4'));
+  assert.equal(video.thumbnailUrl, null, 'never an empty or invented URL');
+  const stored = await Post.findById(noThumb.id).lean();
+  assert.equal(stored.media[0].thumbnailUrl, null);
+  assert.equal(stored.media[0].thumbnailStorageKey ?? null, null);
+
+  // It is in the feed like any other post.
+  const feed = await api('GET', '/api/feed', coach.token);
+  assert.ok(feed.body.data.posts.some((p) => p.id === noThumb.id));
+});
+
+test('editing a video post (title / text) keeps its thumbnail', async () => {
+  const coach = await seedCoach();
+  const post = await publishVideo(coach.token);
+  const before = post.media[0].thumbnailUrl;
+  assert.ok(before);
+  const res = await api('PATCH', `/api/coach/feed/posts/${post.id}`, coach.token, { title: 'New title', text: 'New text' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.post.media[0].thumbnailUrl, before);
+  assert.equal((await Post.findById(post.id).lean()).media[0].thumbnailUrl, before);
 });
 
 test('mixed media and fake files are refused by their bytes', async () => {

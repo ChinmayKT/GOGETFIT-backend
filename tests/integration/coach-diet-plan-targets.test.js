@@ -77,7 +77,17 @@ beforeEach(async () => {
   const siri = await Coach.create({ userId: siriUser._id, profile: { level: 'LEVEL 1' } });
   chethan = await seedUser(['user', 'client'], 'Chethan Kumar');
   bob = await seedUser(['user', 'client'], 'Bob');
-  enrollment = await EnrolledClient.create({ userId: chethan._id, planId: gp._id, coachId: prajwal._id, enrollDate: new Date('2025-01-01'), hasStarted: true, isDeleted: false });
+  // Active today (started, inside its days): the member may see the coach's targets.
+  enrollment = await EnrolledClient.create({
+    userId: chethan._id,
+    planId: gp._id,
+    coachId: prajwal._id,
+    enrollDate: new Date('2025-01-01'),
+    hasStarted: true,
+    startDate: day(addCalendarDays(today(), -3)),
+    endDate: day(addCalendarDays(today(), 80)),
+    isDeleted: false,
+  });
   // An earlier cycle of the same client with another coach.
   oldEnrollment = await EnrolledClient.create({ userId: chethan._id, planId: gp._id, coachId: siri._id, enrollDate: new Date('2024-01-01'), hasStarted: true, isDeleted: false });
   siriEnrollment = await EnrolledClient.create({ userId: bob._id, planId: gp._id, coachId: siri._id, enrollDate: new Date('2025-01-01'), hasStarted: true, isDeleted: false });
@@ -144,6 +154,58 @@ test('member and coach reads: the coach\'s targets win; without them the plan\'s
   const coach = (await coachDay()).body.data.dietPlan;
   assert.deepEqual(coach.coachGivenTargets, COACH);
   assert.equal(coach.id, String(doc._id));
+});
+
+test('the member sees the coach\'s targets only during an active plan; the coach always does', async () => {
+  const doc = await plan({ bmr: 1500, tdee: 2100 });
+  const setLifecycle = (fields) => EnrolledClient.updateOne({ _id: enrollment._id }, { $set: fields });
+  const hidden = { coachGivenTargets: null, coachTargetsSetAt: null, effectiveTargets: null, targetsSource: null };
+  const restricted = (view) => ({
+    coachGivenTargets: view.coachGivenTargets,
+    coachTargetsSetAt: view.coachTargetsSetAt,
+    effectiveTargets: view.effectiveTargets,
+    targetsSource: view.targetsSource,
+  });
+  // The plan itself - never hidden, never changed by the lifecycle.
+  // (The enrollment summary carries its start/end dates, which move here.)
+  const planPart = ({ coachGivenTargets: _a, coachTargetsSetAt: _b, effectiveTargets: _c, targetsSource: _d, enrollment: _e, ...rest }) => rest;
+
+  // 1. Bought, never started: the coach can still set and read the intake.
+  await setLifecycle({ hasStarted: false, startDate: null, endDate: null });
+  assert.equal((await put(enrollment._id, doc._id, COACH)).status, 200, 'the coach sets it before Start');
+  assert.deepEqual((await coachDay()).body.data.dietPlan.coachGivenTargets, COACH, 'the coach reads it before Start');
+  const notStarted = (await memberDay()).body.data.dietPlan;
+  assert.deepEqual(restricted(notStarted), hidden, 'not started');
+  assert.deepEqual(notStarted.dietPlanTargets, ORIGINAL, 'the plan itself is unchanged');
+  assert.equal(notStarted.bmr, 1500);
+  assert.equal(notStarted.tdee, 2100);
+  // Not through another day either.
+  const future = await server.request('GET', `/api/users/me/diet-plan?date=${addCalendarDays(today(), 2)}`, { token: tokenFor(chethan) });
+  assert.deepEqual(restricted(future.body.data.dietPlan), hidden, 'a later day asked for while not active');
+
+  // 2. Start clicked - first day tomorrow (scheduled).
+  await setLifecycle({ hasStarted: true, startDate: day(addCalendarDays(today(), 1)), endDate: day(addCalendarDays(today(), 84)) });
+  assert.deepEqual(restricted((await memberDay()).body.data.dietPlan), hidden, 'scheduled');
+  assert.deepEqual((await coachDay()).body.data.dietPlan.coachGivenTargets, COACH, 'the coach still reads it');
+
+  // 3. Its first IST day.
+  await setLifecycle({ startDate: day(today()), endDate: day(addCalendarDays(today(), 83)) });
+  const firstDay = (await memberDay()).body.data.dietPlan;
+  assert.deepEqual(firstDay.coachGivenTargets, COACH, 'first active day');
+  assert.deepEqual(firstDay.effectiveTargets, COACH);
+  assert.equal(firstDay.targetsSource, 'coach');
+  assert.ok(firstDay.coachTargetsSetAt);
+  assert.deepEqual(planPart(firstDay), planPart(notStarted), 'the same plan either way');
+
+  // 4. The coach changes the intake during the plan: the member reads the new one.
+  const updated = { calories: 1700, protein: 125, carbs: 190, fat: 50 };
+  await put(enrollment._id, doc._id, updated);
+  assert.deepEqual((await memberDay()).body.data.dietPlan.effectiveTargets, updated);
+
+  // 5. Its last day was yesterday (expired).
+  await setLifecycle({ startDate: day(addCalendarDays(today(), -84)), endDate: day(addCalendarDays(today(), -1)) });
+  assert.deepEqual(restricted((await memberDay()).body.data.dietPlan), hidden, 'expired');
+  assert.deepEqual((await coachDay()).body.data.dietPlan.coachGivenTargets, updated, 'the coach still reads it');
 });
 
 test('legacy plans: dailyCalorieTarget is the plan\'s calories; a partial coach set is ignored, never mixed', async () => {

@@ -118,6 +118,20 @@ export const clearTestDb = async () => {
   ]);
 };
 
+/**
+ * Enrollment fields of a plan the coach started and that is active on every
+ * day the tests use - Intake food logs and meal photos need one.
+ */
+export const ACTIVE_PLAN = {
+  hasStarted: true,
+  startDate: new Date('1999-12-31T18:30:00.000Z'), // 2000-01-01 IST
+  endDate: new Date('2099-12-30T18:30:00.000Z'), // 2099-12-31 IST
+};
+
+/** [user] with an active coaching plan (a bare enrollment, see ACTIVE_PLAN). */
+export const seedActivePlan = (user, extra = {}) =>
+  EnrolledClient.create({ userId: user._id, planId: new mongoose.Types.ObjectId(), ...ACTIVE_PLAN, ...extra });
+
 export const disconnectTestDb = async () => {
   await mongoose.connection.close();
 };

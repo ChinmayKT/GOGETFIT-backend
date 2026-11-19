@@ -6,6 +6,7 @@ import {
   submitFoodLog,
   uploadFoodLogMealImage,
 } from '../services/food-log.service.js';
+import { requireActivePlan } from '../services/plan-lifecycle.service.js';
 import { validateFoodLogSubmission } from '../validators/food-log.validator.js';
 
 /**
@@ -30,8 +31,12 @@ export const getMyFoodLog = handle(async (req, res) => {
 /**
  * GET /api/users/me/food-log/history?from=&to=&limit=&cursor= - the days the
  * member submitted a log, newest first, totals only; nextCursor pages on.
+ * Only during an active coaching plan.
  */
 export const getMyFoodLogHistory = handle(async (req, res) => {
+  // Food Intake History is an active-plan feature (403 INTAKE_PLAN_NOT_ACTIVE
+  // otherwise). Not in the service: coaches read it through the same one.
+  await requireActivePlan(req.user._id);
   const q = (k) => (typeof req.query[k] === 'string' && req.query[k] !== '' ? req.query[k] : undefined);
   res.status(200).json({
     success: true,

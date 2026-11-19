@@ -13,6 +13,7 @@ import { ERROR_CODES, badRequest, forbidden, notFound } from '../utils/errors.js
 import { toFoodRow } from './food.service.js';
 import { ACTOR_ADMIN, ACTOR_COACH, resolveEnrollmentForActor } from './diet-plan-create-data.service.js';
 import { round2 } from '../utils/fitness-calculations.js';
+import { planAccessOf } from './plan-lifecycle.service.js';
 
 /**
  * Coach-assigned diet plans, read-only. See docs/diet-plans-design.md.
@@ -251,14 +252,23 @@ export const listDietPlansForAdmin = async (userId, { today = businessDayOf(new 
  * an id from the request. The day rule is DietPlan.findForDay, the same rule
  * the admin schedule is built from.
  */
-export const getDietPlanForDay = async (userId, { date, today = businessDayOf(new Date()) } = {}) => {
+export const getDietPlanForDay = async (userId, { date, today = businessDayOf(new Date()), now = new Date(), coachView = false } = {}) => {
   const day = date ?? today;
   if (!isCalendarDay(day)) throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'date must be a valid YYYY-MM-DD day');
   const user = await findUser(userId);
 
   const doc = await DietPlan.findForDay(user._id, startOfBusinessDay(day)).populate(POPULATE).lean();
   const { views, missing } = await toViews(doc ? [doc] : [], today, userId);
-  return { date: day, today, dietPlan: views[0] ?? null, missingFoodIds: missing };
+  const view = views[0] ?? null;
+  // The coach's Set Calorie Intake is the member's only during an active plan
+  // (planAccessOf, decided now - whatever day is asked for): not before the
+  // coach's Start, not while it is scheduled for tomorrow, not after it ends.
+  // The plan itself (foods, totals, bmr, tdee) is unchanged. The coach always
+  // sees them (coachView).
+  if (view && !coachView && !(await planAccessOf(user._id, now)).access.planActive) {
+    Object.assign(view, { coachGivenTargets: null, coachTargetsSetAt: null, effectiveTargets: null, targetsSource: null });
+  }
+  return { date: day, today, dietPlan: view, missingFoodIds: missing };
 };
 
 /** Consecutive date runs, as inclusive YYYY-MM-DD spans with their day counts. */
@@ -391,7 +401,7 @@ export const getDietPlanHistoryForCoach = async (coachUserId, enrollmentId, opti
 
 /** Coach read: the plan the client sees on a day - the member's own day lookup. */
 export const getDietPlanForDayForCoach = async (coachUserId, enrollmentId, options = {}) =>
-  getDietPlanForDay(await clientOfCoachEnrollment(coachUserId, enrollmentId), options);
+  getDietPlanForDay(await clientOfCoachEnrollment(coachUserId, enrollmentId), { ...options, coachView: true });
 
 /**
  * Set Calorie Intake: the signed-in coach sets the daily targets the client of

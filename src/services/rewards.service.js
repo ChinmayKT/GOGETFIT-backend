@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 import logger from '../config/logger.js';
 import DailyUpdate from '../models/daily-update.model.js';
-import EnrolledClient, { enrollmentStatus } from '../models/enrolled-client.model.js';
+import EnrolledClient, { enrollmentLifecycle, enrollmentStatus } from '../models/enrolled-client.model.js';
 import GoGetFitCoins from '../models/gogetfit-coins.model.js';
 import Streak from '../models/streak.model.js';
 import { businessDayOf } from '../utils/business-date.js';
@@ -20,34 +20,17 @@ import { businessDayOf } from '../utils/business-date.js';
 export const COINS_PER_DAY = 5;
 
 /**
- * TEMPORARY - until the coach Start Plan flow exists: a bought plan the coach
- * has not started yet earns too. It has no dates, so there is no day window
- * (planStartDate/planEndDate null); its weeks × 7 still cap the count.
- * ponytail: remove this (and its use in planOf) once Start Plan sets the
- * enrollment's dates - Daily Update will then be locked until the plan starts.
+ * The member's active plan today (enrollmentLifecycle: started, first day
+ * reached, last day not passed) with its dates, or null. A bought plan the
+ * coach has not started, a scheduled one and an ended one earn nothing.
  */
-const notStartedPlanOf = (docs, now) => {
-  const doc = docs.find((d) => enrollmentStatus(d, now) === 'not_started');
-  const weeks = doc?.planId?.durationWeeks;
-  if (!doc || !Number.isFinite(weeks) || weeks <= 0) return null;
-  return {
-    enrollmentId: doc._id,
-    coachId: doc.coachId ?? null,
-    planId: doc.planId?._id ?? null,
-    planStartDate: null,
-    planEndDate: null,
-    planDays: weeks * 7,
-  };
-};
-
-/** The member's active enrollment with its plan dates, or null. */
 const planOf = async (userId, now) => {
   const docs = await EnrolledClient.find({ userId, isDeleted: { $ne: true } })
     .sort({ enrollDate: -1, createdAt: -1, _id: -1 })
     .populate({ path: 'planId', select: 'durationWeeks' })
     .lean();
-    const doc = docs.find((d) => enrollmentStatus(d, now) === 'active');
-  if (!doc?.startDate || !doc?.endDate) return notStartedPlanOf(docs, now);
+  const doc = docs.find((d) => enrollmentLifecycle(d, now) === 'active');
+  if (!doc) return null;
   const weeks = doc.planId?.durationWeeks;
   return {
     enrollmentId: doc._id,
@@ -110,9 +93,8 @@ export const getRewards = async (userId, now = new Date()) => {
  */
 export const rewardDailyUpdate = async ({ userId, dailyUpdateId, date, now = new Date() }) => {
   const plan = await planOf(userId, now);
-  // A started plan: its days only. A not-started one (temporary): any day.
-  const inPlan =
-    plan && (plan.planStartDate === null || (date >= plan.planStartDate && date <= plan.planEndDate));
+  // Days of the active plan only.
+  const inPlan = plan && date >= plan.planStartDate && date <= plan.planEndDate;
   if (!inPlan) return { ...(await getRewards(userId, now)), rewardAwarded: false, coinsAwarded: 0 };
 
   const session = await mongoose.startSession();

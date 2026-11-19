@@ -6,6 +6,9 @@ import jwt from 'jsonwebtoken';
 import Coach from '../../src/models/coach.model.js';
 import DailyUpdate from '../../src/models/daily-update.model.js';
 import EnrolledClient from '../../src/models/enrolled-client.model.js';
+import FoodLog from '../../src/models/food-log.model.js';
+import GoGetFitCoins from '../../src/models/gogetfit-coins.model.js';
+import Streak from '../../src/models/streak.model.js';
 import Food from '../../src/models/food.model.js';
 import GogetfitPlan from '../../src/models/gogetfit-plan.model.js';
 import Questionnaire from '../../src/models/questionnaire.model.js';
@@ -92,6 +95,7 @@ beforeEach(async () => {
     answers: { gender: 'Male', age: '30', height: '5.6' },
     status: 'submitted',
   });
+  intakes.clear();
   rice = await Food.create({ name: 'Rice', foodType: 'Vegetarian', servingUnit: 'Grams', servingQuantity: 100, calories: 113, fat: 3.5, carbs: 19, protein: 2 });
 });
 
@@ -140,6 +144,7 @@ test('a second PUT the same day overwrites the same record; createdAt kept', asy
 
 test('racing first submissions: still one record', async () => {
   const day = '2026-10-20';
+  await logDay(member, day);
   await Promise.all(
     [1, 2, 3].map((i) => submitDailyUpdate(member._id, day, { ...body(), steps: 1000 * i, calorieOut: body().calorieOut }, { now: noonOn(day) })),
   );
@@ -151,6 +156,7 @@ test('different days are different records; history is newest first, summaries o
     await logDay(member, day);
     await submitDailyUpdate(member._id, day, { ...body(), calorieOut: body().calorieOut }, { now: noonOn(day) });
   }
+  await logDay(other, '2026-10-20');
   await submitDailyUpdate(other._id, '2026-10-20', { ...body(), calorieOut: body().calorieOut }, { now: noonOn('2026-10-20') });
 
   const res = await get('/api/users/me/daily-updates');
@@ -174,12 +180,13 @@ test('different days are different records; history is newest first, summaries o
   assert.equal((await get('/api/users/me/daily-updates/2026-10-17')).body.data.dailyUpdate, null);
 });
 
-test('missing values stay null: a part unavailable, or no food log', async () => {
+test('missing values stay null: a Calorie Out part unavailable', async () => {
   const day = '2026-10-20';
-  const noLog = await submitDailyUpdate(member._id, day, { ...body(), calorieOut: { bmr: 1542, tef: null, eat: 150, neat: 144 } }, { now: noonOn(day) });
-  assert.equal(noLog.dailyUpdate.calorieIn, null);
-  assert.deepEqual(noLog.dailyUpdate.calorieOut, { bmr: 1542, tef: null, eat: 150, neat: 144, total: null });
-  assert.deepEqual(noLog.dailyUpdate.energyBalance, { kcal: null, status: null });
+  await logDay(member, day);
+  const partial = await submitDailyUpdate(member._id, day, { ...body(), calorieOut: { bmr: 1542, tef: null, eat: 150, neat: 144 } }, { now: noonOn(day) });
+  assert.equal(partial.dailyUpdate.calorieIn.consumed.calories, 1130);
+  assert.deepEqual(partial.dailyUpdate.calorieOut, { bmr: 1542, tef: null, eat: 150, neat: 144, total: null });
+  assert.deepEqual(partial.dailyUpdate.energyBalance, { kcal: null, status: null });
 });
 
 test('only today can be submitted; bad dates and bodies are refused', async () => {
@@ -198,6 +205,7 @@ test('only today can be submitted; bad dates and bodies are refused', async () =
 
 test('a member only ever reads and writes their own', async () => {
   const day = '2026-10-20';
+  await logDay(other, day);
   await submitDailyUpdate(other._id, day, { ...body(), calorieOut: body().calorieOut }, { now: noonOn(day) });
   assert.equal((await get(`/api/users/me/daily-updates/${day}`)).body.data.dailyUpdate, null);
   assert.deepEqual((await get('/api/users/me/daily-updates')).body.data.items, []);
@@ -234,8 +242,17 @@ test('coach: their own client\'s days and one day in full - read-only, never ano
 
 const LIMIT_MESSAGE = "You've reached your daily Daily Update submission limit. You can submit again tomorrow.";
 const counted = async (user, day) => (await DailyUpdate.findOne({ clientId: user._id, date: day }).lean())?.submissionCount ?? 0;
-const once = (user, day, extra = {}, now = noonOn(day)) =>
-  submitDailyUpdate(user._id, day, { ...body(), calorieOut: body().calorieOut, submissionId: null, ...extra }, { now });
+// The day's Intake once per member and day, before however many updates.
+const intakes = new Map();
+const intakeOnce = (user, day) => {
+  const key = `${user._id}:${day}`;
+  if (!intakes.has(key)) intakes.set(key, logDay(user, day));
+  return intakes.get(key);
+};
+const once = async (user, day, extra = {}, now = noonOn(day)) => {
+  if (day === businessDayOf(now)) await intakeOnce(user, day);
+  return submitDailyUpdate(user._id, day, { ...body(), calorieOut: body().calorieOut, submissionId: null, ...extra }, { now });
+};
 const rejectsWithLimit = (promise) =>
   assert.rejects(promise, (e) => e.statusCode === 429 && e.code === 'DAILY_UPDATE_DAILY_LIMIT_REACHED' && e.message === LIMIT_MESSAGE);
 
@@ -276,6 +293,7 @@ test('limit: concurrent submissions never exceed three; a retried id counts once
 
 test('limit over HTTP: the member\'s own count, 429 on the fourth; another member untouched', async () => {
   const today = businessDayOf(new Date());
+  await logDay(member, today);
   for (let i = 0; i < 3; i += 1) assert.equal((await put(today, body({ steps: i }))).status, 200);
   const fourth = await put(today, body());
   assert.equal(fourth.status, 429);
@@ -283,4 +301,101 @@ test('limit over HTTP: the member\'s own count, 429 on the fourth; another membe
   assert.equal(fourth.body.error.message, LIMIT_MESSAGE);
   assert.deepEqual((await get(`/api/users/me/daily-updates/${today}`)).body.data.submissions, { used: 3, limit: 3, remaining: 0 });
   assert.deepEqual((await get(`/api/users/me/daily-updates/${today}`, other)).body.data.submissions, { used: 0, limit: 3, remaining: 3 });
+});
+
+// --- Eligibility: an active plan, and today's Intake first ------------------
+
+const INTAKE_REQUIRED = (e) => e.statusCode === 409 && e.code === 'DAILY_UPDATE_INTAKE_REQUIRED';
+const PLAN_NOT_ACTIVE = (e) => e.statusCode === 403 && e.code === 'INTAKE_PLAN_NOT_ACTIVE';
+const update = (user, day) => submitDailyUpdate(user._id, day, { ...body(), calorieOut: body().calorieOut }, { now: noonOn(day) });
+const nothingEarned = async (user) => {
+  assert.equal(await Streak.countDocuments({ clientId: user._id }), 0);
+  assert.equal(await GoGetFitCoins.countDocuments({ clientId: user._id }), 0);
+};
+
+test('eligible: active plan + today\'s submitted Intake -> saved, rewarded exactly once', async () => {
+  const day = '2026-10-20';
+  await logDay(member, day);
+  const first = await update(member, day);
+  assert.equal(first.rewards.rewardAwarded, true);
+  assert.equal(first.rewards.coinsAwarded, 5);
+  const again = await update(member, day);
+  assert.equal(again.rewards.rewardAwarded, false);
+  assert.deepEqual(again.rewards.coins, { balance: 5, totalEarned: 5 });
+});
+
+test('active plan, no Intake today -> 409, nothing saved or earned', async () => {
+  await assert.rejects(update(member, '2026-10-20'), INTAKE_REQUIRED);
+  assert.equal(await DailyUpdate.countDocuments(), 0);
+  await nothingEarned(member);
+});
+
+test('active plan, Intake only on a previous day -> 409', async () => {
+  await logDay(member, '2026-10-19');
+  await assert.rejects(update(member, '2026-10-20'), INTAKE_REQUIRED);
+  assert.equal(await DailyUpdate.countDocuments(), 0);
+  await nothingEarned(member);
+});
+
+test('active plan, today\'s Intake belongs to another enrollment -> 409', async () => {
+  const day = '2026-10-20';
+  await FoodLog.create({
+    clientId: member._id,
+    logDate: day,
+    timezone: 'Asia/Kolkata',
+    enrollmentId: otherEnrollment._id,
+    meals: [],
+    consumed: { calories: 500, fat: 10, carbs: 60, protein: 20 },
+    submittedAt: noonOn(day),
+    submissionCount: 1,
+  });
+  await assert.rejects(update(member, day), INTAKE_REQUIRED);
+  await nothingEarned(member);
+});
+
+test('an Intake without calories or macros does not count -> 409', async () => {
+  const day = '2026-10-20';
+  await FoodLog.create({
+    clientId: member._id,
+    logDate: day,
+    timezone: 'Asia/Kolkata',
+    enrollmentId: enrollment._id,
+    meals: [],
+    consumed: { calories: 0, fat: 0, carbs: 0, protein: 0 },
+    submittedAt: noonOn(day),
+    submissionCount: 1,
+  });
+  await assert.rejects(update(member, day), INTAKE_REQUIRED);
+});
+
+test('no active plan -> 403 for unstarted, scheduled, expired and no plan; nothing saved or earned', async () => {
+  const day = '2026-10-20';
+  const cases = [
+    { hasStarted: false, startDate: null, endDate: null }, // bought, awaiting Start
+    { startDate: new Date('2026-10-20T18:30:00.000Z'), endDate: new Date('2027-01-11T18:30:00.000Z') }, // starts 21 Oct
+    { startDate: new Date('2026-07-01T18:30:00.000Z'), endDate: new Date('2026-09-22T18:30:00.000Z') }, // ended 23 Sep
+  ];
+  for (const change of cases) {
+    await EnrolledClient.updateOne({ _id: enrollment._id }, { $set: { hasStarted: true, ...change } });
+    await assert.rejects(update(member, day), PLAN_NOT_ACTIVE, JSON.stringify(change));
+  }
+  const noPlan = await seedUser(['user'], 'New');
+  await assert.rejects(update(noPlan, day), PLAN_NOT_ACTIVE);
+  assert.equal(await DailyUpdate.countDocuments(), 0);
+  await nothingEarned(member);
+  await nothingEarned(noPlan);
+});
+
+test('direct API: a PUT without today\'s Intake is refused (409) and earns nothing; the body cannot claim one', async () => {
+  const today = businessDayOf(new Date());
+  const res = await put(today, body({ calorieIn: { consumed: { calories: 2000, fat: 50, carbs: 200, protein: 100 } }, foodLogSubmitted: true, enrollmentId: String(enrollment._id) }));
+  assert.equal(res.status, 409, JSON.stringify(res.body));
+  assert.equal(res.body.error.code, 'DAILY_UPDATE_INTAKE_REQUIRED');
+  assert.equal(await DailyUpdate.countDocuments(), 0);
+  await nothingEarned(member);
+  // After the Intake, the same request is accepted.
+  await logDay(member, today);
+  const ok = await put(today, body());
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.data.rewards.rewardAwarded, true);
 });

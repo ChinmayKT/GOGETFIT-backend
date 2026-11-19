@@ -39,6 +39,16 @@ export const ERROR_CODES = {
   FOOD_LOG_DAY_CHANGED: 'FOOD_LOG_DAY_CHANGED',
   // Intake: the member has used all of today's food log submissions.
   INTAKE_DAILY_LIMIT_REACHED: 'INTAKE_DAILY_LIMIT_REACHED',
+  // Intake: food logs and meal photos only during an active coaching plan.
+  INTAKE_PLAN_NOT_ACTIVE: 'INTAKE_PLAN_NOT_ACTIVE',
+  // Daily Update: today's Food Intake (with calories and macros) comes first.
+  DAILY_UPDATE_INTAKE_REQUIRED: 'DAILY_UPDATE_INTAKE_REQUIRED',
+  // Coach Start: the plan was started before, is not ready, has no duration,
+  // or would overlap the member's running plan.
+  PLAN_ALREADY_STARTED: 'PLAN_ALREADY_STARTED',
+  PLAN_NOT_READY: 'PLAN_NOT_READY',
+  PLAN_DURATION_MISSING: 'PLAN_DURATION_MISSING',
+  PLAN_OVERLAP: 'PLAN_OVERLAP',
   // Daily Update: the member has used all of today's submissions.
   DAILY_UPDATE_DAILY_LIMIT_REACHED: 'DAILY_UPDATE_DAILY_LIMIT_REACHED',
   // A Daily Update can only be submitted for today; past days are read-only.

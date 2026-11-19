@@ -4,9 +4,24 @@ import {
   getCoachDashboard,
 } from '../services/coach-dashboard.service.js';
 import { ACTOR_COACH, getDietPlanCreateData } from '../services/diet-plan-create-data.service.js';
+import { startPlanForCoach } from '../services/plan-lifecycle.service.js';
 import { getSubmittedQuestionnaireForCoach, listSubmittedQuestionnairesForCoach } from '../services/questionnaire.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import { validateMemberCoachListQuery } from '../validators/coach.validator.js';
+
+/**
+ * POST /api/coach/enrollments/:enrollmentId/start - the coach starts one of
+ * their own client's plans: it begins the next day (IST) and its dates are
+ * saved on the enrollment. 409 when already started, not ready, without a
+ * duration, or overlapping the client's running plan.
+ */
+export const postStartPlan = async (req, res, next) => {
+  try {
+    res.status(200).json({ success: true, data: await startPlanForCoach(req.user._id, req.params.enrollmentId) });
+  } catch (error) {
+    next(error);
+  }
+};
 
 /** GET /api/coach/dashboard - the signed-in coach's own home numbers. */
 export const getDashboard = async (req, res, next) => {

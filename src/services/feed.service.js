@@ -427,8 +427,10 @@ export const uploadPostMedia = async (user, postId, index, buffer, { slot = 'med
 
 /**
  * `POST /coach/feed/posts/:id/publish` - step 3: the draft becomes visible, but
- * only with every file present (and a video's thumbnail). Publishing twice
- * returns the same post: a retried tap never makes a second one.
+ * only with every file present. A video's thumbnail is optional: without one
+ * thumbnailUrl stays null and the app shows the video's own first frame. A
+ * thumbnail that was uploaded must still be there. Publishing twice returns
+ * the same post: a retried tap never makes a second one.
  */
 export const publishPost = async (user, postId) => {
   const post = await ownPost(user, postId);
@@ -436,7 +438,6 @@ export const publishPost = async (user, postId) => {
 
   for (const m of post.media) {
     if (!m.url) throw badRequest(ERROR_CODES.POST_INCOMPLETE, `Media ${m.position + 1} has not been uploaded`);
-    if (m.kind === 'video' && !m.thumbnailUrl) throw badRequest(ERROR_CODES.POST_INCOMPLETE, 'The video needs a thumbnail');
     for (const key of [m.storageKey, m.kind === 'video' ? m.thumbnailStorageKey : null].filter(Boolean)) {
       if (!(await postMediaExists(key))) {
         throw badRequest(ERROR_CODES.POST_INCOMPLETE, `Media ${m.position + 1} is missing - upload it again`);

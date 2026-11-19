@@ -10,6 +10,7 @@ import { ERROR_CODES, badRequest, conflict, notFound, tooManyRequests } from '..
 import { assertValidImage } from '../utils/image.js';
 import { clientOfCoachEnrollment, contributed, effectiveTargetsOf } from './diet-plan.service.js';
 import { toFoodRow } from './food.service.js';
+import { planAccessOf, planNotActive, requireActivePlan } from './plan-lifecycle.service.js';
 import { foodLogMealImageFolder, getStorage } from './storage/index.js';
 
 /**
@@ -149,14 +150,19 @@ export const uploadFoodLogMealImage = async (userId, meal, buffer, { now = new D
   if (!FOOD_LOG_MEALS.includes(n)) throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'meal must be 1 to 8');
   const type = assertValidImage(buffer, { maxBytes: env.storage.maxUploadBytes });
   const user = await findUser(userId);
+  // The same rule as a submission: no photo is stored outside an active plan.
+  await requireActivePlan(user._id, now);
   const logDate = businessDayOf(now);
   const storage = getStorage();
   const url = await storage.save(buffer, { folder: foodLogMealImageFolder(user._id, logDate, n), extension: type.extension });
   return { date: logDate, meal: n, image: { url, storageKey: storage.keyFor(url) } };
 };
 
-/** The plan, coach and targets a day's log starts with. */
-const resolveDaySnapshot = async (clientId, logDate, memberGoal) => {
+/**
+ * The plan, coach and targets a day's log starts with. Its enrollment is the
+ * one authorizing the submission ([enrollment], requireActivePlan's).
+ */
+const resolveDaySnapshot = async (clientId, logDate, memberGoal, enrollment) => {
   const plan = await DietPlan.findForDay(clientId, startOfBusinessDay(logDate)).lean();
   let targets = null;
   let targetsSource = null;
@@ -171,8 +177,8 @@ const resolveDaySnapshot = async (clientId, logDate, memberGoal) => {
   return {
     dietPlanId: plan?._id ?? null,
     planId: plan?.planId ?? null,
-    coachId: plan?.coachId ?? null,
-    enrollmentId: plan?.enrollmentId ?? null,
+    coachId: plan?.coachId ?? enrollment.coachId ?? null,
+    enrollmentId: enrollment._id,
     targets,
     targetsSource,
   };
@@ -187,13 +193,18 @@ export const getFoodLogForDay = async (userId, { date, now = new Date() } = {}) 
   const day = date ?? today;
   if (!isCalendarDay(day)) throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'date must be a valid YYYY-MM-DD day');
   const user = await findUser(userId);
-  const doc = await FoodLog.findOne({ clientId: user._id, logDate: day }).lean();
+  const [doc, { access }] = await Promise.all([
+    FoodLog.findOne({ clientId: user._id, logDate: day }).lean(),
+    planAccessOf(user._id, now),
+  ]);
   return {
     date: day,
     today,
     timezone: env.businessTimezone,
     foodLog: await viewOf(doc),
     submissions: submissionsOf(doc),
+    // What Intake may offer today: Submit, and the member's own calorie goal.
+    planAccess: access,
   };
 };
 
@@ -214,6 +225,11 @@ export const getFoodLogForDay = async (userId, { date, now = new Date() } = {}) 
  */
 export const submitFoodLog = async (userId, input, { now = new Date() } = {}) => {
   const user = await findUser(userId);
+  // Only during an active plan, decided at the moment of submitting: a log
+  // from the plan's last day sent after it ended is refused (no grace), and
+  // the `day` sent never matters here.
+  const { enrollment, access } = await planAccessOf(user._id, now);
+  if (!enrollment) throw planNotActive();
   const logDate = businessDayOf(now);
   // Meals loaded for another day (the app kept yesterday's screen past
   // midnight) are never written into today's log.
@@ -226,6 +242,7 @@ export const submitFoodLog = async (userId, input, { now = new Date() } = {}) =>
     timezone: env.businessTimezone,
     foodLog: await viewOf(doc),
     submissions: submissionsOf(doc),
+    planAccess: access,
   });
   const id = input.submissionId ?? null;
   // A retry of the submission already saved (its response was lost): the
@@ -328,7 +345,7 @@ export const submitFoodLog = async (userId, input, { now = new Date() } = {}) =>
         targets: existing.targets ?? null,
         targetsSource: existing.targetsSource ?? null,
       }
-    : await resolveDaySnapshot(user._id, logDate, input.memberGoal);
+    : await resolveDaySnapshot(user._id, logDate, input.memberGoal, enrollment);
   const consumed = sumConsumed(meals);
 
   const set = {
