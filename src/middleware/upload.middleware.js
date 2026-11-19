@@ -1,6 +1,7 @@
 import express from 'express';
 
 import env from '../config/env.js';
+import { SUPPORTED_CERTIFICATE_TYPES } from '../utils/certificate-file.js';
 import { SUPPORTED_IMAGE_TYPES } from '../utils/image.js';
 import { SUPPORTED_VIDEO_TYPES } from '../utils/video.js';
 
@@ -15,6 +16,12 @@ import { SUPPORTED_VIDEO_TYPES } from '../utils/video.js';
  */
 export const rawImageBody = express.raw({
   type: SUPPORTED_IMAGE_TYPES,
+  limit: env.storage.maxUploadBytes,
+});
+
+/** The same raw-body approach for a coach certificate: an image or a PDF. */
+export const rawCertificateBody = express.raw({
+  type: SUPPORTED_CERTIFICATE_TYPES,
   limit: env.storage.maxUploadBytes,
 });
 

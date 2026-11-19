@@ -64,6 +64,28 @@ export const toCoachUser = (user) =>
 const toImageRef = (image) =>
   image?.url ? { url: image.url, storageKey: image.storageKey ?? null } : null;
 
+/**
+ * A coach's certifications as readers see them, in upload order. The admin
+ * view keeps each file's storageKey; the public view ([publicView]) carries
+ * only what a profile shows: the details, the file's URL and its type.
+ */
+const toCertifications = (doc, { publicView = false } = {}) =>
+  (Array.isArray(doc.certifications) ? doc.certifications : [])
+    .filter((c) => c?.file?.url)
+    .map((c) => ({
+      id: String(c._id),
+      name: c.name,
+      issuer: c.issuer ?? null,
+      issueDate: c.issueDate ?? null,
+      expiryDate: c.expiryDate ?? null,
+      ...(publicView
+        ? { fileUrl: c.file.url, fileType: c.file.type }
+        : {
+            file: { url: c.file.url, storageKey: c.file.storageKey ?? null, type: c.file.type, mimeType: c.file.mimeType ?? null },
+            uploadedAt: c.uploadedAt ? new Date(c.uploadedAt).toISOString() : null,
+          }),
+    }));
+
 export const toCoach = (doc, user) => ({
   id: String(doc._id),
   userId: String(doc.userId),
@@ -81,6 +103,7 @@ export const toCoach = (doc, user) => ({
     transformations: doc.profile?.transformations ?? null,
     monthlySlots: doc.profile?.monthlySlots ?? null,
   },
+  certifications: toCertifications(doc),
   status: doc.status ?? null,
   createdBy: doc.createdBy ? String(doc.createdBy) : null,
   updatedBy: doc.updatedBy ? String(doc.updatedBy) : null,
@@ -360,6 +383,7 @@ export const toMemberCoach = (doc, user, availability = null, clientsCoachedCoun
     slotStatus: availability?.slotStatus ?? null,
     clientsCoachedCount,
   },
+  certifications: toCertifications(doc, { publicView: true }),
 });
 
 /**

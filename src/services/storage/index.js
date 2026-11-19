@@ -48,6 +48,9 @@ export const PROFILE_PICTURE_FOLDER = 'profile';
  */
 export const coachImageFolder = (coachId, slot) => `coaches/${coachId}/${slot}`;
 
+/** A coach's certificate files, beside (never inside) their picture folders. */
+export const coachCertificationFolder = (coachId) => `coaches/${coachId}/certifications`;
+
 /** A GoGetFit Plan's cover image: its own folder per plan, for the same reason. */
 export const planImageFolder = (planId) => `gogetfit-plans/${planId}/cover`;
 

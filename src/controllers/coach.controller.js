@@ -7,11 +7,18 @@ import {
 } from '../services/coach.service.js';
 import { getCoachCapacity } from '../services/coach-capacity.service.js';
 import { removeCoachImage, setCoachImage } from '../services/coach-image.service.js';
+import {
+  addCertification,
+  removeCertification,
+  replaceCertificationFile,
+  updateCertification,
+} from '../services/coach-certification.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import {
   validateCoachListQuery,
   validateCreateCoach,
   validateUpdateCoach,
+  validateCertificationDetails,
   validateUserPhoneSearch,
 } from '../validators/coach.validator.js';
 import { getCoachClients } from '../services/coach-dashboard.service.js';
@@ -143,6 +150,56 @@ export const deleteCoachImage = (slot) => async (req, res, next) => {
     if (!coach) throw coachNotFound();
 
     res.status(200).json({ success: true, message: 'Coach picture removed', data: { coach } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/admin/coaches/:id/certifications?name=&issuer=&issueDate=&expiryDate=
+ * The certificate file is the raw body (an image or a PDF, checked by its
+ * bytes); its details travel in the query string beside it.
+ */
+export const postCoachCertification = async (req, res, next) => {
+  try {
+    const details = validateCertificationDetails(req.query);
+    const coach = await addCertification(req.params.id, details, req.body, req.user._id);
+    if (!coach) throw coachNotFound();
+    res.status(201).json({ success: true, message: 'Certification added', data: { coach } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** PATCH /api/admin/coaches/:id/certifications/:certificationId - details only (JSON). */
+export const patchCoachCertification = async (req, res, next) => {
+  try {
+    const details = validateCertificationDetails(req.body, { partial: true });
+    const coach = await updateCertification(req.params.id, req.params.certificationId, details, req.user._id);
+    if (!coach) throw coachNotFound();
+    res.status(200).json({ success: true, message: 'Certification updated', data: { coach } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** PUT /api/admin/coaches/:id/certifications/:certificationId/file - a new file, same details. */
+export const putCoachCertificationFile = async (req, res, next) => {
+  try {
+    const coach = await replaceCertificationFile(req.params.id, req.params.certificationId, req.body, req.user._id);
+    if (!coach) throw coachNotFound();
+    res.status(200).json({ success: true, message: 'Certificate file replaced', data: { coach } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** DELETE /api/admin/coaches/:id/certifications/:certificationId */
+export const deleteCoachCertification = async (req, res, next) => {
+  try {
+    const coach = await removeCertification(req.params.id, req.params.certificationId, req.user._id);
+    if (!coach) throw coachNotFound();
+    res.status(200).json({ success: true, message: 'Certification removed', data: { coach } });
   } catch (error) {
     next(error);
   }

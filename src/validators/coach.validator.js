@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { COACH_LEVELS, COACH_STATUSES } from '../models/coach.model.js';
+import { isCalendarDay } from '../utils/business-date.js';
 import { ERROR_CODES, badRequest } from '../utils/errors.js';
 
 /**
@@ -266,5 +267,42 @@ export const validateMemberCoachListQuery = (query = {}) => {
     if (search.length > 100) fail('search must be at most 100 characters');
     out.search = search;
   }
+  return out;
+};
+
+const MAX_CERTIFICATION_TEXT = 120;
+
+const optionalDay = (value, label) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (!isCalendarDay(value)) fail(`${label} must be a date (YYYY-MM-DD)`);
+  return value;
+};
+
+/**
+ * A coach certification's details: from the upload's query string (create)
+ * or a JSON body (edit). On create the name is required; on edit only the
+ * supplied fields change, and at least one must be. Issuer and dates are
+ * optional; an empty value clears them. The expiry is never before the issue
+ * date (checked against the stored one by the service on a partial edit).
+ */
+export const validateCertificationDetails = (source = {}, { partial = false } = {}) => {
+  if (!isPlainObject(source)) fail('Certification details are required');
+  const out = {};
+  if (source.name !== undefined || !partial) {
+    const name = optionalText(source.name ?? null, 'name', MAX_CERTIFICATION_TEXT);
+    if (!name) fail('name is required');
+    out.name = name;
+  }
+  const issuer = optionalText(source.issuer, 'issuer', MAX_CERTIFICATION_TEXT);
+  if (issuer !== undefined) out.issuer = issuer;
+  const issueDate = optionalDay(source.issueDate, 'issueDate');
+  if (issueDate !== undefined) out.issueDate = issueDate;
+  const expiryDate = optionalDay(source.expiryDate, 'expiryDate');
+  if (expiryDate !== undefined) out.expiryDate = expiryDate;
+  if (out.issueDate && out.expiryDate && out.expiryDate < out.issueDate) {
+    fail('expiryDate cannot be before issueDate');
+  }
+  if (partial && Object.keys(out).length === 0) fail('No certification fields supplied');
   return out;
 };

@@ -57,6 +57,38 @@ const coachProfileSchema = new mongoose.Schema(
   { _id: false },
 );
 
+/** How many certifications one coach may hold. */
+export const MAX_COACH_CERTIFICATIONS = 20;
+
+/**
+ * One certification of a coach: its details and the stored file (an image or
+ * a PDF). Only the reference is kept in MongoDB, never the bytes. Its own _id
+ * is the certificate's id. Dates are calendar days (YYYY-MM-DD) as the admin
+ * entered them - never shifted by a timezone.
+ */
+const certificationSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 120 },
+    issuer: { type: String, default: null, trim: true, maxlength: 120 },
+    file: {
+      type: new mongoose.Schema(
+        {
+          url: { type: String, required: true },
+          storageKey: { type: String, required: true },
+          type: { type: String, enum: ['image', 'pdf'], required: true },
+          mimeType: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+      required: true,
+    },
+    issueDate: { type: String, default: null },
+    expiryDate: { type: String, default: null },
+    uploadedAt: { type: Date, required: true },
+  },
+  { _id: true },
+);
+
 /**
  * A coach profile. Identity, login and the basic profile stay on the User; this
  * document holds only what makes that user a coach.
@@ -70,6 +102,11 @@ const coachSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, immutable: true },
     profile: { type: coachProfileSchema, required: true },
     status: { type: String, enum: COACH_STATUSES, default: 'active' },
+    /**
+     * Beside the profile, not in it: a profile edit ($set of profile.*) can
+     * never touch them. Changed only through the certification endpoints.
+     */
+    certifications: { type: [certificationSchema], default: () => [] },
     /** The authenticated administrator, never a value supplied by the browser. */
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },

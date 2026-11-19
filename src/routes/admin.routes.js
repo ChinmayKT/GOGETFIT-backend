@@ -9,13 +9,17 @@ import {
   postAdminUser,
 } from '../controllers/admin.controller.js';
 import {
+  deleteCoachCertification,
   deleteCoachImage,
   getCoach,
   getCoachCapacityForAdmin,
   getCoachClientsForAdmin,
   getCoaches,
   patchCoach,
+  patchCoachCertification,
   postCoach,
+  postCoachCertification,
+  putCoachCertificationFile,
   putCoachImage,
   searchUserByPhone,
 } from '../controllers/coach.controller.js';
@@ -94,7 +98,7 @@ import {
 } from '../controllers/diet-plan.controller.js';
 import { getAdminTransformations } from '../controllers/coach-transformation.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
-import { rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
+import { rawCertificateBody, rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
 
 const router = Router();
 
@@ -145,6 +149,11 @@ router.put('/coaches/:id/profile-picture', rawImageBody, putCoachImage('profileP
 router.delete('/coaches/:id/profile-picture', deleteCoachImage('profilePicture'));
 router.put('/coaches/:id/cover-picture', rawImageBody, putCoachImage('coverPicture'));
 router.delete('/coaches/:id/cover-picture', deleteCoachImage('coverPicture'));
+// The coach's certifications: each its own file (image or PDF) plus details.
+router.post('/coaches/:id/certifications', rawCertificateBody, postCoachCertification);
+router.patch('/coaches/:id/certifications/:certificationId', patchCoachCertification);
+router.put('/coaches/:id/certifications/:certificationId/file', rawCertificateBody, putCoachCertificationFile);
+router.delete('/coaches/:id/certifications/:certificationId', deleteCoachCertification);
 
 // Free Diet Plan templates (legacy Diet/PlanList).
 router.get('/free-diet-plans', getFreeDietPlans);
