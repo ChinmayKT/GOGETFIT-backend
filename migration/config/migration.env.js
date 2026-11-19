@@ -34,6 +34,8 @@ export const migrationEnv = {
   packageTable: process.env.MIGRATION_PACKAGE_TABLE || 'm_package',
   // Admin-managed coupons.
   couponTable: process.env.MIGRATION_COUPON_TABLE || 'm_coupon',
+  // Admin-managed FAQs (question + answer).
+  faqTable: process.env.MIGRATION_FAQ_TABLE || 'm_faq',
   // The food master and its nutrition table, joined exactly as the legacy
   // admin's food list joined them.
   foodTable: process.env.MIGRATION_FOOD_TABLE || 'm_food',

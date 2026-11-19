@@ -11,6 +11,8 @@ import Coach from '../../src/models/coach.model.js';
 import CoachMonthlyCapacity from '../../src/models/coach-monthly-capacity.model.js';
 import GogetfitPlan from '../../src/models/gogetfit-plan.model.js';
 import Coupon from '../../src/models/coupon.model.js';
+import Faq from '../../src/models/faq.model.js';
+import IntroVideo from '../../src/models/intro-video.model.js';
 import EnrolledClient from '../../src/models/enrolled-client.model.js';
 import Food from '../../src/models/food.model.js';
 import CartItem from '../../src/models/cart-item.model.js';
@@ -61,6 +63,8 @@ export const connectTestDb = async () => {
     CoachMonthlyCapacity.syncIndexes(),
     GogetfitPlan.syncIndexes(),
     Coupon.syncIndexes(),
+    Faq.syncIndexes(),
+    IntroVideo.syncIndexes(),
     EnrolledClient.syncIndexes(),
     Food.syncIndexes(),
     CartItem.syncIndexes(),
@@ -89,6 +93,8 @@ export const clearTestDb = async () => {
     CoachMonthlyCapacity.deleteMany({}),
     GogetfitPlan.deleteMany({}),
     Coupon.deleteMany({}),
+    Faq.deleteMany({}),
+    IntroVideo.deleteMany({}),
     EnrolledClient.deleteMany({}),
     Food.deleteMany({}),
     CartItem.deleteMany({}),

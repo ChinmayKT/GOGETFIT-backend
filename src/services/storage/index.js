@@ -58,6 +58,10 @@ export const planImageFolder = (planId) => `gogetfit-plans/${planId}/cover`;
 export const workoutVideoFolder = (workoutId) => `workouts/${workoutId}/video`;
 export const workoutThumbnailFolder = (workoutId) => `workouts/${workoutId}/thumbnail`;
 
+/** An Introductory Video's media: its own folder per lesson and slot, like a workout's. */
+export const introVideoVideoFolder = (id) => `intro-videos/${id}/video`;
+export const introVideoThumbnailFolder = (id) => `intro-videos/${id}/thumbnail`;
+
 /** A food's picture: its own folder per food, so two foods never share a file. */
 export const foodImageFolder = (foodId) => `foods/${foodId}`;
 

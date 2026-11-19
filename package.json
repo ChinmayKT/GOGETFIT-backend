@@ -26,6 +26,7 @@
     "migrate:free-diet-plans": "node migration/scripts/migrate-free-diet-plans.js",
     "migrate:gogetfit-plans": "node migration/scripts/migrate-gogetfit-plans.js",
     "migrate:coupons": "node migration/scripts/migrate-coupons.js",
+    "migrate:faqs": "node migration/scripts/migrate-faqs.js",
     "migrate:foods": "node migration/scripts/migrate-foods.js",
     "migrate:foods:apply": "node migration/scripts/migrate-foods.js --apply",
     "migrate:flatten-foods": "node migration/scripts/flatten-foods.js",

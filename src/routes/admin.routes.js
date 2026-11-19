@@ -37,6 +37,17 @@ import {
   putGogetfitPlanImage,
 } from '../controllers/gogetfit-plan.controller.js';
 import { getCoupon, getCoupons, patchCoupon, postCoupon } from '../controllers/coupon.controller.js';
+import { getAdminFaq, getAdminFaqs, patchFaq, postFaq } from '../controllers/faq.controller.js';
+import {
+  deleteIntroVideo,
+  deleteIntroVideoMedia,
+  getIntroVideo,
+  getIntroVideos,
+  postIntroVideo,
+  postIntroVideoRestore,
+  putIntroVideo,
+  putIntroVideoMedia,
+} from '../controllers/intro-video.controller.js';
 import {
   getAdminAmbassador,
   getAdminAmbassadorActivity,
@@ -192,12 +203,30 @@ router.put('/workouts/:id/video', rawVideoBody, putWorkoutMedia('video'));
 router.delete('/workouts/:id/video', deleteWorkoutMedia('video'));
 router.put('/workouts/:id/thumbnail', rawImageBody, putWorkoutMedia('thumbnail'));
 router.delete('/workouts/:id/thumbnail', deleteWorkoutMedia('thumbnail'));
+// Introductory Videos - their own collection, managed like workouts (DELETE
+// archives, POST /restore brings one back; media as raw bodies).
+router.get('/intro-videos', getIntroVideos);
+router.post('/intro-videos', postIntroVideo);
+router.get('/intro-videos/:id', getIntroVideo);
+router.put('/intro-videos/:id', putIntroVideo);
+router.patch('/intro-videos/:id', putIntroVideo);
+router.delete('/intro-videos/:id', deleteIntroVideo);
+router.post('/intro-videos/:id/restore', postIntroVideoRestore);
+router.put('/intro-videos/:id/video', rawVideoBody, putIntroVideoMedia('video'));
+router.delete('/intro-videos/:id/video', deleteIntroVideoMedia('video'));
+router.put('/intro-videos/:id/thumbnail', rawImageBody, putIntroVideoMedia('thumbnail'));
+router.delete('/intro-videos/:id/thumbnail', deleteIntroVideoMedia('thumbnail'));
 
 // Coupons. No delete/archive: status comes from the validity dates alone.
 router.get('/coupons', getCoupons);
 router.post('/coupons', postCoupon);
 router.get('/coupons/:id', getCoupon);
 router.patch('/coupons/:id', patchCoupon);
+// FAQs: list, read, create, edit. No delete - legacy had none.
+router.get('/faqs', getAdminFaqs);
+router.post('/faqs', postFaq);
+router.get('/faqs/:id', getAdminFaq);
+router.patch('/faqs/:id', patchFaq);
 
 // Brand Ambassadors: profiles, full referral transactions, commission ledger,
 // audit trail. Admin-only like everything here; ambassadors see aggregates only.
