@@ -12,7 +12,14 @@ import mongoose from 'mongoose';
  */
 
 export const POST_TITLE_MAX = 150;
-export const POST_TEXT_MAX = 2000;
+/** The description limit, in characters as a person sees them (see feed.service charCount). */
+export const POST_TEXT_MAX = 5000;
+/**
+ * The stored cap, in UTF-16 units (what Mongoose's maxlength counts): an emoji
+ * takes 2 to 11, so 5,000 of them need far more than 5,000 units. Only a
+ * guard - the real limit is checked by the service.
+ */
+export const POST_TEXT_STORAGE_MAX = POST_TEXT_MAX * 12;
 export const POST_MAX_IMAGES = 10;
 
 export const POST_TYPES = ['article', 'transformation'];
@@ -82,7 +89,7 @@ const postSchema = new mongoose.Schema(
      * that have one still read and validate.
      */
     title: { type: String, trim: true, maxlength: POST_TITLE_MAX },
-    text: { type: String, required: true, trim: true, maxlength: POST_TEXT_MAX },
+    text: { type: String, required: true, trim: true, maxlength: POST_TEXT_STORAGE_MAX },
     mediaType: { type: String, enum: MEDIA_TYPES, required: true },
     media: { type: [mediaSchema], default: [] },
     /**

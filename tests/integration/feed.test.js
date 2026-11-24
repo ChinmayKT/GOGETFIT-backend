@@ -239,8 +239,17 @@ test('with the capability switched on (tests only), a member post uses the same 
 
 test('article and transformation posts; the description limit is enforced, never truncated', async () => {
   const coach = await seedCoach();
-  const article = await publishImages(coach.token, 1, { type: 'article', text: 'b'.repeat(2000) });
-  assert.equal(article.text.length, 2000);
+  // 2,000 (the old limit) up to 5,000 inclusive are kept whole, on create and edit.
+  for (const n of [2000, 2001, 4999]) {
+    assert.equal((await publishImages(coach.token, 1, { type: 'article', text: 'a'.repeat(n) })).text.length, n);
+  }
+  const video = await publishVideo(coach.token, { text: 'v'.repeat(5000) });
+  assert.equal(video.text.length, 5000, 'a transformation video takes the full 5,000 too');
+  const article = await publishImages(coach.token, 3, { type: 'article', text: 'b'.repeat(5000) });
+  assert.equal(article.text.length, 5000);
+  const edited = await api('PATCH', `/api/coach/feed/posts/${video.id}`, coach.token, { text: 'e'.repeat(5000) });
+  assert.equal(edited.status, 200);
+  assert.equal((await Post.findById(video.id).lean()).text, 'e'.repeat(5000), 'an edit of 5,000 is stored whole');
   assert.equal((await publishImages(coach.token, 1, { type: 'transformation' })).type, 'transformation');
 
   const refused = async (overrides, pattern) => {
@@ -248,18 +257,27 @@ test('article and transformation posts; the description limit is enforced, never
     assert.equal(res.status, 400, JSON.stringify(overrides));
     assert.match(res.body.error.message, pattern);
   };
-  await refused({ text: 'b'.repeat(2001) }, /text must be at most 2000/);
+  await refused({ text: 'b'.repeat(5001) }, /text must be at most 5000/);
+  // Counted as a person sees them: an emoji is one character, as in the app.
+  const emoji = await api('PATCH', `/api/coach/feed/posts/${video.id}`, coach.token, { text: '💪'.repeat(5000) });
+  assert.equal(emoji.status, 200, '5,000 emojis (10,000 UTF-16 units) fit');
+  assert.equal((await Post.findById(video.id).lean()).text, '💪'.repeat(5000));
+  assert.equal((await api('PATCH', `/api/coach/feed/posts/${video.id}`, coach.token, { text: '👍🏽'.repeat(5001) })).status, 400);
+  // New lines, spaces, symbols and every script are kept exactly (only the ends are trimmed).
+  const mixed = 'Week 1 💪🔥\n\nLine two: ₹4,999 @coach #fit & <b>x</b> "q" \'s\' — café 中文 👨‍👩‍👧 🇮🇳\n    indented';
+  assert.equal((await api('PATCH', `/api/coach/feed/posts/${video.id}`, coach.token, { text: `  ${mixed}\n\n` })).status, 200);
+  assert.equal((await Post.findById(video.id).lean()).text, mixed);
   await refused({ text: '   ' }, /text is required/);
   await refused({ text: '' }, /text is required/);
   await refused({ text: undefined }, /text is required/);
   await refused({ type: 'story' }, /type must be one of/);
   await refused({ mediaType: 'audio' }, /mediaType/);
 
-  const tooLong = await api('PATCH', `/api/coach/feed/posts/${article.id}`, coach.token, { text: 'c'.repeat(2001) });
+  const tooLong = await api('PATCH', `/api/coach/feed/posts/${article.id}`, coach.token, { text: 'c'.repeat(5001) });
   assert.equal(tooLong.status, 400);
   const blank = await api('PATCH', `/api/coach/feed/posts/${article.id}`, coach.token, { text: '  ' });
   assert.equal(blank.status, 400);
-  assert.equal((await Post.findById(article.id).lean()).text, 'b'.repeat(2000), 'a refused edit changes nothing');
+  assert.equal((await Post.findById(article.id).lean()).text, 'b'.repeat(5000), 'a refused edit changes nothing');
 });
 
 // --- media -----------------------------------------------------------------------
@@ -390,6 +408,44 @@ test('media cannot be changed after publishing; edits take the description only'
   assert.equal(stored.type, 'article');
 });
 
+test('Choose Cover: a published video post takes a new cover - only its author, only the cover, everywhere at once', async () => {
+  const coach = await seedCoach();
+  const other = await seedCoach();
+  const member = await seedUser();
+  for (const type of ['transformation', 'article']) {
+    const post = await publishVideo(coach.token, { type });
+    const before = await Post.findById(post.id).lean();
+    const cover = `/api/coach/feed/posts/${post.id}/media/0/thumbnail`;
+
+    assert.equal((await raw('PUT', cover, other.token, jpeg(77))).status, 404, 'not another coach');
+    assert.equal((await raw('PUT', cover, member.token, jpeg(77))).status, 403, 'not a member');
+    const res = await raw('PUT', cover, coach.token, jpeg(77));
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+
+    const after = await Post.findById(post.id).lean();
+    const [b, a] = [before.media[0], after.media[0]];
+    assert.notEqual(a.thumbnailUrl, b.thumbnailUrl, 'a new cover');
+    assert.deepEqual([a.url, a.storageKey, a.durationMs, a.width, a.height], [b.url, b.storageKey, b.durationMs, b.width, b.height], 'the video is untouched');
+    assert.deepEqual([after.text, after.type, after.status, String(after._id)], [before.text, before.type, 'published', post.id]);
+    assert.equal(await fileExists(b.thumbnailStorageKey), false, 'the old cover file is removed');
+    assert.equal(await fileExists(a.thumbnailStorageKey), true);
+    // The one saved cover is what the Feed and Home serve.
+    const shown = (await feed(member.token)).posts.find((p) => p.id === post.id);
+    assert.equal(shown.media[0].thumbnailUrl, a.thumbnailUrl);
+    // The same bytes again (a retried save) keep the same file.
+    assert.equal((await raw('PUT', cover, coach.token, jpeg(77))).status, 200);
+    assert.equal((await Post.findById(post.id).lean()).media[0].thumbnailStorageKey, a.thumbnailStorageKey);
+  }
+  // Never a photo's slot, never a non-image, never a removed post.
+  const photos = await publishImages(coach.token, 1);
+  assert.equal((await raw('PUT', `/api/coach/feed/posts/${photos.id}/media/0/thumbnail`, coach.token, jpeg(5))).status, 400);
+  const video = await publishVideo(coach.token);
+  assert.equal((await raw('PUT', `/api/coach/feed/posts/${video.id}/media/0/thumbnail`, coach.token, mp4(), 'video/mp4')).status, 400);
+  assert.equal((await raw('PUT', `/api/coach/feed/posts/${video.id}/media/0?width=1&height=1&durationMs=1`, coach.token, mp4(), 'video/mp4')).status, 409, 'the video itself stays fixed');
+  await Post.updateOne({ _id: video.id }, { $set: { status: 'removed' } });
+  assert.equal((await raw('PUT', `/api/coach/feed/posts/${video.id}/media/0/thumbnail`, coach.token, jpeg(6))).status, 404);
+});
+
 test('abandoned drafts are cleaned up with their files; published posts and their files are never touched', async () => {
   const coach = await seedCoach();
   const published = await publishImages(coach.token);
@@ -469,6 +525,102 @@ test('the type filter is applied by the server', async () => {
   assert.deepEqual(await feedIds(member.token, '?type=transformation'), [transformation.id]);
   assert.deepEqual(await feedIds(member.token, '?type=all'), [transformation.id, article.id]);
   assert.equal((await api('GET', '/api/feed?type=story', member.token)).status, 400);
+});
+
+test('Results (type=transformation): every coach published transformation in any media, never an article, across pages', async () => {
+  const a = await seedCoach();
+  const b = await seedCoach();
+  const member = await seedUser();
+  const want = [
+    await publishImages(a.token, 1, { type: 'transformation' }),
+    await publishImages(b.token, 3, { type: 'transformation' }),
+    await publishVideo(a.token, { type: 'transformation' }),
+    await publishVideo(b.token, { type: 'transformation' }),
+  ];
+  // Never in Results: articles in both media, a draft, and removed or hidden transformations.
+  await publishImages(a.token, 2, { type: 'article' });
+  await publishVideo(b.token, { type: 'article' });
+  await createPostDraft(a.token, { type: 'transformation' });
+  const removed = await publishImages(b.token, 1, { type: 'transformation' });
+  const hidden = await publishImages(a.token, 1, { type: 'transformation' });
+  await Post.updateOne({ _id: removed.id }, { $set: { status: 'removed' } });
+  await Post.updateOne({ _id: hidden.id }, { $set: { status: 'hidden' } });
+
+  const seen = [];
+  let cursor;
+  do {
+    const data = await feed(member.token, `?type=transformation&limit=1${cursor ? `&cursor=${cursor}` : ''}`);
+    seen.push(...data.posts);
+    cursor = data.nextCursor;
+    assert.ok(seen.length <= 10);
+  } while (cursor);
+
+  assert.ok(seen.every((p) => p.type === 'transformation'), 'no page brings an article');
+  assert.equal(new Set(seen.map((p) => p.id)).size, seen.length, 'no post twice');
+  assert.deepEqual(new Set(seen.map((p) => p.id)), new Set(want.map((p) => p.id)));
+  assert.deepEqual(new Set(seen.map((p) => p.mediaType)), new Set(['images', 'video']));
+  assert.ok(seen.some((p) => p.media.length === 3), 'a multi-image transformation is included');
+  assert.equal(new Set(seen.map((p) => p.author.name)).size, 2, 'both coaches, each with their own name');
+});
+
+test('Continuous Guest: without an account, only the Results listing of image posts - same shape, no viewer state; everything else still needs a sign-in', async () => {
+  const a = await seedCoach();
+  const b = await seedCoach();
+  const member = await seedUser();
+  const image = await publishImages(a.token, 1, { type: 'transformation' });
+  const carousel = await publishImages(b.token, 3, { type: 'transformation' });
+  const video = await publishVideo(a.token, { type: 'transformation' });
+  await publishImages(b.token, 1, { type: 'article' });
+  await publishVideo(a.token, { type: 'article' });
+  await createPostDraft(a.token, { type: 'transformation' });
+  const hidden = await publishImages(b.token, 1, { type: 'transformation' });
+  await Post.updateOne({ _id: hidden.id }, { $set: { status: 'hidden' } });
+
+  const guestPath = '/api/feed?type=transformation&mediaType=images';
+  const guest = await api('GET', guestPath);
+  assert.equal(guest.status, 200, JSON.stringify(guest.body));
+  const posts = guest.body.data.posts;
+  assert.deepEqual(posts.map((p) => p.id), [carousel.id, image.id], 'image transformations only, newest first');
+  assert.ok(posts.every((p) => p.media.every((m) => m.kind === 'image')), 'never a video (nor its cover)');
+  assert.ok(posts.every((p) => !p.likedByMe && !p.savedByMe && !p.canEdit), 'no viewer state for a guest');
+  for (const p of posts) {
+    assert.deepEqual(Object.keys(p.author).sort(), ['avatarUrl', 'coachId', 'name', 'role', 'userId', 'verified'], 'no private author fields');
+  }
+  assert.equal(new Set(posts.map((p) => p.author.name)).size, 2, 'every coach');
+
+  // The same listing for a signed-in member has exactly the same shape.
+  const signedIn = await feed(member.token, '?type=transformation&mediaType=images');
+  assert.deepEqual(Object.keys(signedIn.posts[0]).sort(), Object.keys(posts[0]).sort());
+  // ...and the Results listing itself (no media filter) still has the video.
+  assert.ok((await feedIds(member.token, '?type=transformation')).includes(video.id));
+
+  // Guest pages walk to the end once each.
+  const seen = [];
+  let cursor;
+  do {
+    const res = await api('GET', `${guestPath}&limit=1${cursor ? `&cursor=${cursor}` : ''}`);
+    assert.equal(res.status, 200);
+    seen.push(...res.body.data.posts.map((p) => p.id));
+    cursor = res.body.data.nextCursor;
+  } while (cursor);
+  assert.deepEqual(seen, [carousel.id, image.id]);
+
+  // Anything else without an account: 401, as before.
+  for (const path of [
+    '/api/feed',
+    '/api/feed?type=transformation',
+    '/api/feed?type=transformation&mediaType=video',
+    '/api/feed?type=article&mediaType=images',
+    `${guestPath}&coachId=${a.coach._id}`,
+    '/api/feed/home-preview',
+    `/api/feed/posts/${image.id}`,
+  ]) {
+    assert.equal((await api('GET', path)).status, 401, path);
+  }
+  assert.equal((await api('PUT', `/api/feed/posts/${image.id}/like`)).status, 401);
+  assert.equal((await api('PUT', `/api/feed/posts/${image.id}/save`)).status, 401);
+  // A token that is sent is always checked - a bad one is refused even here.
+  assert.equal((await api('GET', guestPath, 'not-a-token')).status, 401);
 });
 
 test('cursor pagination walks every post once, newest first, across a larger set', async () => {
@@ -1009,6 +1161,11 @@ test('home preview cards carry the description, cut to a card-sized excerpt', as
   assert.ok(long.endsWith('…'));
   assert.equal(data.transformationPosts[0].text, 'Short.');
   assert.equal('title' in data.transformationPosts[0], false);
+
+  // An emoji description is cut between emojis, never through one.
+  await publishImages(coach.token, 1, { type: 'article', text: '💪'.repeat(300) });
+  const cut = (await homePreview(member.token)).articlePosts[0].text;
+  assert.equal(cut, `${'💪'.repeat(199)}…`);
 });
 
 // --- a coach profile's posts ------------------------------------------------------

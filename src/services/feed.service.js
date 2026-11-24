@@ -68,10 +68,33 @@ const cropsOf = (value, count) => {
   });
 };
 
+/**
+ * Characters as a person sees them (grapheme clusters): an emoji, a flag or
+ * an accented letter is one, as in the app's counter - not JS `length`,
+ * which counts UTF-16 units (an emoji is 2 to 11).
+ */
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+export const charCount = (text) => {
+  let n = 0;
+  for (const _ of graphemes.segment(text)) n += 1;
+  return n;
+};
+/** The first [max] characters (never half an emoji). */
+const firstChars = (text, max) => {
+  let out = '';
+  let n = 0;
+  for (const { segment } of graphemes.segment(text)) {
+    if (n === max) break;
+    out += segment;
+    n += 1;
+  }
+  return out;
+};
+
 const requiredText = (value, label, max) => {
   const text = typeof value === 'string' ? value.trim() : '';
   if (!text) throw invalid(`${label} is required`);
-  if (text.length > max) throw invalid(`${label} must be at most ${max} characters`);
+  if (charCount(text) > max) throw invalid(`${label} must be at most ${max} characters`);
   return text;
 };
 
@@ -379,13 +402,16 @@ const ownPost = async (user, postId) => {
  */
 export const uploadPostMedia = async (user, postId, index, buffer, { slot = 'media', width, height, durationMs } = {}) => {
   const post = await ownPost(user, postId);
-  if (post.status !== 'uploading') {
+  const thumbnail = slot === 'thumbnail';
+  // A published post's media is fixed - except a video's cover, which its
+  // author may change (Choose Cover); the video itself never changes.
+  const coverOfPublished = thumbnail && post.status === 'published';
+  if (post.status !== 'uploading' && !coverOfPublished) {
     throw conflict(ERROR_CODES.POST_NOT_EDITABLE, 'Media cannot be changed after publishing');
   }
   const i = Number(index);
   if (!Number.isInteger(i) || i < 0 || i >= post.media.length) throw invalid(`index must be from 0 to ${post.media.length - 1}`);
   const target = post.media.find((m) => m.position === i);
-  const thumbnail = slot === 'thumbnail';
   if (thumbnail && target.kind !== 'video') throw invalid('Only a video has a thumbnail');
 
   const type =
@@ -410,10 +436,12 @@ export const uploadPostMedia = async (user, postId, index, buffer, { slot = 'med
   set[thumbnail ? `${prefix}.thumbnailStorageKey` : `${prefix}.storageKey`] = stored.storageKey;
 
   // Only while still a draft: a publish that won the race keeps its media.
+  // A published video's new cover: only while still published (not removed).
+  if (coverOfPublished) set.editedAt = new Date();
   let before;
   try {
     before = await Post.findOneAndUpdate(
-      { _id: post._id, authorUserId: user._id, status: 'uploading' },
+      { _id: post._id, authorUserId: user._id, status: coverOfPublished ? 'published' : 'uploading' },
       { $set: set },
       { new: false },
     ).lean();
@@ -529,6 +557,7 @@ const feedCoachId = (value) => {
  * rules, so an inactive coach still shows nothing.
  */
 export const listFeed = async (user, { type, mediaType, coachId, limit, cursor } = {}) => {
+  // [user] is null for a guest (see feed.routes): no likes, saves or edit rights to show.
   const kind = feedType(type);
   const media = feedMediaType(mediaType);
   const coach = feedCoachId(coachId);
@@ -537,7 +566,7 @@ export const listFeed = async (user, { type, mediaType, coachId, limit, cursor }
   const query = coach
     ? { $and: [visible, { authorType: 'coach', authorCoachId: coach, ...narrowed }] }
     : { ...visible, ...narrowed };
-  return page(query, 'publishedAt', { limit, cursor }, user._id);
+  return page(query, 'publishedAt', { limit, cursor }, user?._id ?? null, { viewerState: Boolean(user) });
 };
 
 export const HOME_PREVIEW_SIZE = 3;
@@ -567,7 +596,8 @@ const PREVIEW_FIELDS = {
 
 export const PREVIEW_TEXT_MAX = 200;
 
-const excerpt = (text) => (text.length > PREVIEW_TEXT_MAX ? `${text.slice(0, PREVIEW_TEXT_MAX - 1).trimEnd()}…` : text);
+const excerpt = (text) =>
+  charCount(text) > PREVIEW_TEXT_MAX ? `${firstChars(text, PREVIEW_TEXT_MAX - 1).trimEnd()}…` : text;
 
 /** A presented post cut down to one card: its first media item as the cover. */
 const toPreview = (post) => {
