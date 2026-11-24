@@ -170,6 +170,10 @@ export const toListRow = (doc, now = new Date()) => ({
   enrollDate: doc.enrollDate ? doc.enrollDate.toISOString() : null,
   startDate: doc.startDate ? doc.startDate.toISOString() : null,
   endDate: doc.endDate ? doc.endDate.toISOString() : null,
+  /** When the coach stopped the plan (Stop Plan), else null; endDate stays the scheduled last day. */
+  stoppedAt: doc.stoppedAt ? doc.stoppedAt.toISOString() : null,
+  /** The user id of the coach who stopped it, else null. */
+  stoppedBy: doc.stoppedBy ? String(doc.stoppedBy) : null,
   hasStarted: Boolean(doc.hasStarted),
   legacyEnrollmentId: doc.legacy?.enrollmentId ?? null,
   /** 'admin_manual' for portal-created rows; null on migrated rows. */
@@ -237,13 +241,16 @@ export const buildMatch = ({ userId, coachId, planId, couponId, status, hasStart
   if (hasStarted !== undefined) match.hasStarted = hasStarted;
 
   // The legacy status rule, expressed as a query so it can be paginated:
-  // active = started and not past its end date, inactive = started and past it.
+  // active = started and not past its end date, inactive = started and past it,
+  // stopped = the coach stopped it (never active or inactive, whatever its dates).
   if (status === 'deleted') match.isDeleted = true;
   else if (status === 'not_started') Object.assign(match, { isDeleted: { $ne: true }, hasStarted: false });
   else if (status === 'active') {
-    Object.assign(match, { isDeleted: { $ne: true }, hasStarted: true, endDate: { $gte: notEndedCutoff(now) } });
+    Object.assign(match, { isDeleted: { $ne: true }, hasStarted: true, stoppedAt: null, endDate: { $gte: notEndedCutoff(now) } });
   } else if (status === 'inactive') {
-    Object.assign(match, { isDeleted: { $ne: true }, hasStarted: true, endDate: { $lt: notEndedCutoff(now) } });
+    Object.assign(match, { isDeleted: { $ne: true }, hasStarted: true, stoppedAt: null, endDate: { $lt: notEndedCutoff(now) } });
+  } else if (status === 'stopped') {
+    Object.assign(match, { isDeleted: { $ne: true }, stoppedAt: { $ne: null } });
   }
 
   return match;
@@ -262,7 +269,14 @@ export const currentFirstStages = (now = new Date()) => [
         $cond: [
           { $eq: ['$isDeleted', true] },
           2,
-          { $cond: [{ $and: ['$hasStarted', { $gte: ['$endDate', notEndedCutoff(now)] }] }, 0, 1] },
+          {
+            $cond: [
+              // Started, not stopped, end date not passed.
+              { $and: ['$hasStarted', { $not: [{ $ifNull: ['$stoppedAt', false] }] }, { $gte: ['$endDate', notEndedCutoff(now)] }] },
+              0,
+              1,
+            ],
+          },
         ],
       },
     },

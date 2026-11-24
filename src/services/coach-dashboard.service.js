@@ -106,12 +106,14 @@ const toCoachClientRow = (doc, now) => ({
 const toWorkspaceClientRow = (doc, now) => ({
   enrollmentId: String(doc._id),
   status: enrollmentStatus(doc, now),
-  /** not_started | scheduled | active | completed (enrollmentLifecycle). */
+  /** not_started | scheduled | active | completed | stopped (enrollmentLifecycle). */
   lifecycle: enrollmentLifecycle(doc, now),
   hasStarted: Boolean(doc.hasStarted),
   enrollDate: doc.enrollDate ? doc.enrollDate.toISOString() : null,
   startDate: doc.startDate ? doc.startDate.toISOString() : null,
+  /** The scheduled last day - a stop never moves it (stoppedAt is the actual end). */
   endDate: doc.endDate ? doc.endDate.toISOString() : null,
+  stoppedAt: doc.stoppedAt ? doc.stoppedAt.toISOString() : null,
   client: {
     userId: doc.user ? String(doc.user._id) : String(doc.userId),
     name: doc.user?.profile?.name ?? null,

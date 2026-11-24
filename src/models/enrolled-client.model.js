@@ -200,6 +200,15 @@ const enrolledClientSchema = new mongoose.Schema(
     hasStarted: { type: Boolean, default: false },
     /** When the coach clicked Start (null for migrated, manual or unstarted rows). */
     startedAt: { type: Date, default: null },
+    /**
+     * Coach Stop Plan: when the coach permanently ended this enrollment early
+     * (null while it never was). Final - nothing ever clears it, so a stopped
+     * enrollment can never run again. startDate/endDate keep the plan's
+     * original scheduled days; this is the actual end.
+     */
+    stoppedAt: { type: Date, default: null },
+    /** The coach's user id who stopped it. */
+    stoppedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     /** t_enrollment.delete_flg. Every migrated row is '0'; the coach list filtered on it. */
     isDeleted: { type: Boolean, default: false },
 
@@ -277,9 +286,12 @@ enrolledClientSchema.index({ 'payment.transactionId': 1 }, { name: 'enrolled_tra
  *   scheduled   - started, its first day is still ahead
  *   active      - today is between its first and last day, both included
  *   completed   - its last day has passed
+ *   stopped     - the coach stopped it (stoppedAt): over for good, whatever
+ *                 its dates say
  */
 export const enrollmentLifecycle = (doc, now = new Date()) => {
   if (doc?.isDeleted) return 'deleted';
+  if (doc?.stoppedAt) return 'stopped';
   if (!doc?.hasStarted || !doc?.startDate || !doc?.endDate) return 'not_started';
   const today = businessDayOf(now);
   if (today < businessDayOf(doc.startDate)) return 'scheduled';
@@ -336,7 +348,7 @@ export const enrollmentStatus = (doc, now = new Date()) => {
   return { scheduled: 'active', completed: 'inactive' }[lifecycle] ?? lifecycle;
 };
 
-export const ENROLLMENT_STATUSES = ['active', 'inactive', 'not_started', 'deleted'];
+export const ENROLLMENT_STATUSES = ['active', 'inactive', 'not_started', 'stopped', 'deleted'];
 
 export const EnrolledClient = mongoose.model('EnrolledClient', enrolledClientSchema);
 export default EnrolledClient;

@@ -93,6 +93,10 @@ const enrollmentFor = async (userId, now) => {
     throw forbidden(ERROR_CODES.INTAKE_PLAN_NOT_ACTIVE, 'Weekly Update opens once your coach starts your plan.');
   }
   if (!chosen) throw notFound(ERROR_CODES.ENROLLED_CLIENT_NOT_FOUND, 'You have no plan to send a Weekly Update for');
+  // A plan the coach stopped takes no more updates (its stop ended it for good).
+  if (chosen.status === 'stopped') {
+    throw forbidden(ERROR_CODES.INTAKE_PLAN_NOT_ACTIVE, 'Your coach has stopped your plan.');
+  }
   const doc = await EnrolledClient.findOne(
     { _id: chosen.id, userId, isDeleted: { $ne: true } },
     { coachId: 1, planId: 1, startDate: 1, hasStarted: 1 },

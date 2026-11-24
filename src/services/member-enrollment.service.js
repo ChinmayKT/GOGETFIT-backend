@@ -35,6 +35,8 @@ export const toMemberEnrollment = (doc, now = new Date()) => ({
   startDate: iso(doc.startDate),
   endDate: iso(doc.endDate),
   hasStarted: Boolean(doc.hasStarted),
+  /** When the coach stopped this plan for good (status 'stopped'), else null. */
+  stoppedAt: iso(doc.stoppedAt),
 
   payment: {
     /** What was actually charged, in whole rupees. */

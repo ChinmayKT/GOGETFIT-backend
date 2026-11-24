@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { enrollmentLifecycle, enrollmentStatus, notEndedCutoff, unlocksPlan } from '../../src/models/enrolled-client.model.js';
+import { currentEnrollmentOf, enrollmentLifecycle, enrollmentStatus, notEndedCutoff, unlocksPlan } from '../../src/models/enrolled-client.model.js';
 import { addCalendarDays, startOfBusinessDay } from '../../src/utils/business-date.js';
 
 /**
@@ -67,4 +67,19 @@ test('unlocksPlan: from the coach\'s Start (first day tomorrow) through the last
   // Dated ahead with no coach Start (e.g. an admin enrollment): waits for its first day.
   assert.equal(unlocksPlan(started, ist('2026-11-18T14:01:00')), false);
   assert.equal(unlocksPlan(started, ist('2026-11-19T00:00:00')), true);
+});
+
+test('stopped: final whatever the dates say - never current, never unlocking, its own status', () => {
+  const coachStarted = { ...started, startedAt: ist('2026-11-18T14:00:00') };
+  const stopped = { ...coachStarted, stoppedAt: ist('2026-11-25T11:00:00') };
+  for (const at of ['2026-11-18T15:00:00', '2026-11-25T11:00:01', '2027-01-01T12:00:00', '2027-03-01T12:00:00']) {
+    assert.equal(enrollmentLifecycle(stopped, ist(at)), 'stopped', at);
+    assert.equal(unlocksPlan(stopped, ist(at)), false, at);
+    assert.equal(enrollmentStatus(stopped, ist(at)), 'stopped', at);
+  }
+  assert.equal(enrollmentLifecycle({ ...stopped, isDeleted: true }), 'deleted');
+  // The newest purchase that was stopped is never picked over nothing, nor over the running one.
+  const other = { ...coachStarted, _id: 'b' };
+  assert.equal(currentEnrollmentOf([stopped], ist('2026-12-01T12:00:00')), null);
+  assert.equal(currentEnrollmentOf([stopped, other], ist('2026-12-01T12:00:00')), other);
 });

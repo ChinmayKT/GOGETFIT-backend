@@ -4,7 +4,7 @@ import {
   getCoachDashboard,
 } from '../services/coach-dashboard.service.js';
 import { ACTOR_COACH, getDietPlanCreateData } from '../services/diet-plan-create-data.service.js';
-import { startPlanForCoach } from '../services/plan-lifecycle.service.js';
+import { startPlanForCoach, stopPlanForCoach } from '../services/plan-lifecycle.service.js';
 import { getSubmittedQuestionnaireForCoach, listSubmittedQuestionnairesForCoach } from '../services/questionnaire.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import { validateMemberCoachListQuery } from '../validators/coach.validator.js';
@@ -18,6 +18,20 @@ import { validateMemberCoachListQuery } from '../validators/coach.validator.js';
 export const postStartPlan = async (req, res, next) => {
   try {
     res.status(200).json({ success: true, data: await startPlanForCoach(req.user._id, req.params.enrollmentId) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/coach/enrollments/:enrollmentId/stop - the coach permanently
+ * stops their client's running plan: its access ends at once and it can never
+ * run again. 409 PLAN_NOT_ACTIVE when it is not running, PLAN_STOPPED when it
+ * was already stopped; 404 for another coach's enrollment.
+ */
+export const postStopPlan = async (req, res, next) => {
+  try {
+    res.status(200).json({ success: true, data: await stopPlanForCoach(req.user._id, req.params.enrollmentId) });
   } catch (error) {
     next(error);
   }

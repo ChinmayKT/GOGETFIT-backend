@@ -54,6 +54,11 @@ export const ERROR_CODES = {
   PLAN_OVERLAP: 'PLAN_OVERLAP',
   // Coach Start while another plan of the client has not expired yet.
   ACTIVE_PLAN_EXISTS: 'ACTIVE_PLAN_EXISTS',
+  // Coach Stop: the enrollment was stopped - for good (no restart, no second stop).
+  PLAN_STOPPED: 'PLAN_STOPPED',
+  // Coach Stop of an enrollment that is not the client's running plan
+  // (bought and not started, dated ahead without a Start, or expired).
+  PLAN_NOT_ACTIVE: 'PLAN_NOT_ACTIVE',
   // Daily Update: the member has used all of today's submissions.
   DAILY_UPDATE_DAILY_LIMIT_REACHED: 'DAILY_UPDATE_DAILY_LIMIT_REACHED',
   // A Daily Update can only be submitted for today; past days are read-only.

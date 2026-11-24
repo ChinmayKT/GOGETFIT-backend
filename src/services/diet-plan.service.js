@@ -13,7 +13,7 @@ import { ERROR_CODES, badRequest, forbidden, notFound } from '../utils/errors.js
 import { toFoodRow } from './food.service.js';
 import { ACTOR_ADMIN, ACTOR_COACH, resolveEnrollmentForActor } from './diet-plan-create-data.service.js';
 import { round2 } from '../utils/fitness-calculations.js';
-import { planAccessOf, unstartedEnrollmentIds } from './plan-lifecycle.service.js';
+import { hiddenEnrollmentIdsOn, planAccessOf, unstartedEnrollmentIds } from './plan-lifecycle.service.js';
 
 /**
  * Coach-assigned diet plans, read-only. See docs/diet-plans-design.md.
@@ -257,9 +257,9 @@ export const getDietPlanForDay = async (userId, { date, today = businessDayOf(ne
   if (!isCalendarDay(day)) throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'date must be a valid YYYY-MM-DD day');
   const user = await findUser(userId);
 
-  // The member's own view passes over plans of enrollments not started yet;
-  // the coach's view is unchanged.
-  const skipEnrollmentIds = coachView ? [] : await unstartedEnrollmentIds(user._id);
+  // The member's own view passes over plans of enrollments not started yet,
+  // and of a stopped one from its stop day; the coach's view is unchanged.
+  const skipEnrollmentIds = coachView ? [] : await hiddenEnrollmentIdsOn(user._id, day);
   const doc = await DietPlan.findForDay(user._id, startOfBusinessDay(day), { skipEnrollmentIds }).populate(POPULATE).lean();
   const { views, missing } = await toViews(doc ? [doc] : [], today, userId);
   const view = views[0] ?? null;

@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 import DietPlan from '../models/diet-plan.model.js';
-import EnrolledClient, { currentEnrollmentOf, enrollmentLifecycle } from '../models/enrolled-client.model.js';
+import EnrolledClient, { currentEnrollmentOf, enrollmentLifecycle, unlocksPlan } from '../models/enrolled-client.model.js';
 import GogetfitPlan from '../models/gogetfit-plan.model.js';
 import WorkoutPlan from '../models/workout-plan.model.js';
 import { addCalendarDays, businessDayOf, startOfBusinessDay } from '../utils/business-date.js';
@@ -29,12 +29,12 @@ export const planNotActive = (message = 'Food intake submission is available onl
  *  - Several active plans (legacy overlaps): the latest-starting one.
  *  - A scheduled plan the coach has started (first official day tomorrow)
  *    authorizes everything at once; its dates are not moved.
- *  - Not started, completed and deleted enrollments authorize nothing.
+ *  - Not started, completed, stopped and deleted enrollments authorize nothing.
  */
 export const planAccessOf = async (userId, now = new Date()) => {
   const docs = await EnrolledClient.find(
     { userId, hasStarted: true, isDeleted: { $ne: true } },
-    { planId: 1, coachId: 1, startDate: 1, endDate: 1, startedAt: 1, hasStarted: 1, isDeleted: 1 },
+    { planId: 1, coachId: 1, startDate: 1, endDate: 1, startedAt: 1, stoppedAt: 1, hasStarted: 1, isDeleted: 1 },
   )
     .sort({ startDate: -1, _id: -1 })
     .lean();
@@ -68,6 +68,19 @@ export const planAccessOf = async (userId, now = new Date()) => {
  */
 export const unstartedEnrollmentIds = (userId) =>
   EnrolledClient.distinct('_id', { userId, hasStarted: { $ne: true } });
+
+/**
+ * The enrollments whose diet and workout plans the member does not see on
+ * [day] (YYYY-MM-DD): the unstarted ones, and a stopped one from the day it
+ * was stopped on - its plans stay stored, and its earlier days readable.
+ */
+export const hiddenEnrollmentIdsOn = async (userId, day) => {
+  const docs = await EnrolledClient.find(
+    { userId, $or: [{ hasStarted: { $ne: true } }, { stoppedAt: { $ne: null } }] },
+    { hasStarted: 1, stoppedAt: 1 },
+  ).lean();
+  return docs.filter((d) => !d.hasStarted || businessDayOf(d.stoppedAt) <= day).map((d) => d._id);
+};
 
 /** The enrollment authorizing the plan features now; 403 without one. */
 export const requireActivePlan = async (userId, now = new Date()) => {
@@ -129,7 +142,7 @@ export const activePlanExists = (live) =>
 const livePlanOf = async (userId, exceptId, now, session) => {
   const docs = await EnrolledClient.find(
     { userId, _id: { $ne: exceptId }, hasStarted: true, isDeleted: { $ne: true } },
-    { startDate: 1, endDate: 1, startedAt: 1, hasStarted: 1, isDeleted: 1 },
+    { startDate: 1, endDate: 1, startedAt: 1, stoppedAt: 1, hasStarted: 1, isDeleted: 1 },
   )
     .session(session)
     .lean();
@@ -154,7 +167,8 @@ const livePlanOf = async (userId, exceptId, now, session) => {
  */
 export const startPlanForCoach = async (coachUserId, enrollmentId, { now = new Date() } = {}) => {
   const clientId = await clientOfCoachEnrollment(coachUserId, enrollmentId);
-  const enrollment = await EnrolledClient.findById(enrollmentId, { planId: 1, hasStarted: 1 }).lean();
+  const enrollment = await EnrolledClient.findById(enrollmentId, { planId: 1, hasStarted: 1, stoppedAt: 1 }).lean();
+  if (enrollment.stoppedAt) throw planStopped();
   if (enrollment.hasStarted) throw conflict(ERROR_CODES.PLAN_ALREADY_STARTED, 'This plan has already been started');
 
   const [hasDiet, hasWorkout, plan] = await Promise.all([
@@ -184,7 +198,7 @@ export const startPlanForCoach = async (coachUserId, enrollmentId, { now = new D
       if (live) throw activePlanExists(live);
       // Only an unstarted, live enrollment: a second Start of it finds none.
       started = await EnrolledClient.findOneAndUpdate(
-        { _id: enrollment._id, hasStarted: { $ne: true }, isDeleted: { $ne: true } },
+        { _id: enrollment._id, hasStarted: { $ne: true }, stoppedAt: null, isDeleted: { $ne: true } },
         {
           $set: {
             hasStarted: true,
@@ -214,6 +228,67 @@ export const startPlanForCoach = async (coachUserId, enrollmentId, { now = new D
   };
 };
 
+/** 409 PLAN_STOPPED - a stopped enrollment is over for good. */
+const planStopped = () =>
+  conflict(ERROR_CODES.PLAN_STOPPED, 'This plan was stopped and can never be started, resumed or stopped again');
+
+/**
+ * Coach Stop: the signed-in coach permanently ends one of their own
+ * enrollments - the client's running plan - before its last day.
+ *
+ *  - Ownership from the token and the enrollment (clientOfCoachEnrollment).
+ *  - Only a plan that unlocks the client's features now (unlocksPlan: active,
+ *    or started by the coach with Day 1 tomorrow). Bought-not-started, dated
+ *    ahead without a Start, and expired plans: 409 PLAN_NOT_ACTIVE. Already
+ *    stopped: 409 PLAN_STOPPED.
+ *  - Writes stoppedAt / stoppedBy only. The original dates, purchase and
+ *    payment stay as they are; nothing else of the member's is touched, and
+ *    no other plan is started (the coach starts the next one, if any).
+ *  - Final: enrollmentLifecycle reads it 'stopped' from then on, so it never
+ *    authorizes anything again, Start refuses it, and nothing clears it.
+ *  - Under the member's lock in one transaction, like Start: a Stop and a
+ *    Start (or two Stops) for one member run one after the other, and the
+ *    second sees what the first committed.
+ */
+export const stopPlanForCoach = async (coachUserId, enrollmentId, { now = new Date() } = {}) => {
+  const clientId = await clientOfCoachEnrollment(coachUserId, enrollmentId);
+  await ensureMemberLock(clientId);
+  const session = await mongoose.startSession();
+  let stopped;
+  try {
+    await session.withTransaction(async () => {
+      await lockMemberPlans(clientId, session);
+      const doc = await EnrolledClient.findById(enrollmentId).session(session).lean();
+      if (doc?.stoppedAt) throw planStopped();
+      if (!unlocksPlan(doc, now)) {
+        throw conflict(ERROR_CODES.PLAN_NOT_ACTIVE, "Only the client's currently active plan can be stopped");
+      }
+      stopped = await EnrolledClient.findOneAndUpdate(
+        { _id: doc._id, stoppedAt: null, isDeleted: { $ne: true } },
+        { $set: { stoppedAt: now, stoppedBy: coachUserId, updatedBy: coachUserId } },
+        { new: true, session },
+      ).lean();
+      if (!stopped) throw planStopped();
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return {
+    enrollmentId: String(stopped._id),
+    lifecycle: enrollmentLifecycle(stopped, now),
+    status: 'stopped',
+    stoppedAt: stopped.stoppedAt.toISOString(),
+    stoppedBy: String(stopped.stoppedBy),
+    startedAt: stopped.startedAt ? stopped.startedAt.toISOString() : null,
+    // The original scheduled days, unchanged by the stop.
+    startDate: stopped.startDate ? stopped.startDate.toISOString() : null,
+    endDate: stopped.endDate ? stopped.endDate.toISOString() : null,
+    planStartDate: stopped.startDate ? businessDayOf(stopped.startDate) : null,
+    planEndDate: stopped.endDate ? businessDayOf(stopped.endDate) : null,
+  };
+};
+
 /**
  * Admin manual enrollment with dates: refused (409 PLAN_OVERLAP) when its
  * days [startDay, endDay] meet the days of another started plan of the
@@ -225,18 +300,20 @@ export const startPlanForCoach = async (coachUserId, enrollmentId, { now = new D
 export const assertNoOverlappingPlan = async (userId, startDay, endDay, session) => {
   const docs = await EnrolledClient.find(
     { userId, hasStarted: true, isDeleted: { $ne: true } },
-    { startDate: 1, endDate: 1, startedAt: 1 },
+    { startDate: 1, endDate: 1, startedAt: 1, stoppedAt: 1 },
   )
     .session(session)
     .lean();
   const overlapping = docs.some((d) => {
     if (!d.startDate || !d.endDate) return false;
     const from = [businessDayOf(d.startDate), d.startedAt && businessDayOf(d.startedAt)].filter(Boolean).sort()[0];
-    return from <= endDay && startDay <= businessDayOf(d.endDate);
+    // A stopped plan's days end on the day it was stopped.
+    const to = [businessDayOf(d.endDate), d.stoppedAt && businessDayOf(d.stoppedAt)].filter(Boolean).sort()[0];
+    return from <= endDay && startDay <= to;
   });
   if (overlapping) {
     throw conflict(ERROR_CODES.PLAN_OVERLAP, "These dates overlap another plan of this client - a client can have only one plan at a time");
   }
 };
 
-export default { planAccessOf, requireActivePlan, startPlanForCoach, planNotActive, ensureMemberLock, lockMemberPlans, assertNoOverlappingPlan };
+export default { planAccessOf, requireActivePlan, startPlanForCoach, stopPlanForCoach, planNotActive, ensureMemberLock, lockMemberPlans, assertNoOverlappingPlan };

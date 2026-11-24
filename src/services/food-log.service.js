@@ -10,7 +10,7 @@ import { ERROR_CODES, badRequest, conflict, notFound, tooManyRequests } from '..
 import { assertValidImage } from '../utils/image.js';
 import { clientOfCoachEnrollment, contributed, effectiveTargetsOf } from './diet-plan.service.js';
 import { toFoodRow } from './food.service.js';
-import { planAccessOf, planNotActive, requireActivePlan, unstartedEnrollmentIds } from './plan-lifecycle.service.js';
+import { hiddenEnrollmentIdsOn, planAccessOf, planNotActive, requireActivePlan } from './plan-lifecycle.service.js';
 import { foodLogMealImageFolder, getStorage } from './storage/index.js';
 
 /**
@@ -164,7 +164,7 @@ export const uploadFoodLogMealImage = async (userId, meal, buffer, { now = new D
  */
 const resolveDaySnapshot = async (clientId, logDate, memberGoal, enrollment) => {
   const plan = await DietPlan.findForDay(clientId, startOfBusinessDay(logDate), {
-    skipEnrollmentIds: await unstartedEnrollmentIds(clientId),
+    skipEnrollmentIds: await hiddenEnrollmentIdsOn(clientId, logDate),
   }).lean();
   let targets = null;
   let targetsSource = null;

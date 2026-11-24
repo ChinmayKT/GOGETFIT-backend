@@ -15,7 +15,7 @@ import {
   coachOfUser,
   escapeRegex,
 } from './diet-plan.service.js';
-import { unstartedEnrollmentIds } from './plan-lifecycle.service.js';
+import { hiddenEnrollmentIdsOn } from './plan-lifecycle.service.js';
 import { businessDayOf, isCalendarDay, startOfBusinessDay } from '../utils/business-date.js';
 import { ERROR_CODES, badRequest, notFound } from '../utils/errors.js';
 import { parseReps, parseSets } from '../utils/workout-prescription.js';
@@ -92,7 +92,7 @@ export const getWorkoutPlanForDay = async (userId, { date, now = new Date() } = 
   if (!isCalendarDay(day)) throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'date must be a valid YYYY-MM-DD day');
   const user = await findUser(userId);
   const doc = await WorkoutPlan.findForDay(user._id, startOfBusinessDay(day), {
-    skipEnrollmentIds: await unstartedEnrollmentIds(user._id),
+    skipEnrollmentIds: await hiddenEnrollmentIdsOn(user._id, day),
   }).lean();
   if (!doc) return { date: day, today, timezone: env.businessTimezone, workoutPlan: null };
   return { date: day, today, timezone: env.businessTimezone, workoutPlan: toWorkoutPlanView(doc, await workoutsFor([doc])) };
