@@ -76,7 +76,12 @@ const postSchema = new mongoose.Schema(
       },
     },
     type: { type: String, enum: POST_TYPES, required: true },
-    title: { type: String, required: true, trim: true, maxlength: POST_TITLE_MAX },
+    /**
+     * Posts no longer have titles: new posts are saved without one and the
+     * description ([text]) is their only text. Kept, optional, so older posts
+     * that have one still read and validate.
+     */
+    title: { type: String, trim: true, maxlength: POST_TITLE_MAX },
     text: { type: String, required: true, trim: true, maxlength: POST_TEXT_MAX },
     mediaType: { type: String, enum: MEDIA_TYPES, required: true },
     media: { type: [mediaSchema], default: [] },
@@ -101,6 +106,16 @@ const postSchema = new mongoose.Schema(
 postSchema.index({ status: 1, publishedAt: -1, _id: -1 }, { name: 'post_status_published' });
 /** The Feed filtered by type. */
 postSchema.index({ status: 1, type: 1, publishedAt: -1, _id: -1 }, { name: 'post_status_type_published' });
+/**
+ * The Feed filtered by type and media type, and Home's four previews. Without
+ * it a rare media type (video) is found by walking every newer post of the type.
+ */
+postSchema.index(
+  { status: 1, type: 1, mediaType: 1, publishedAt: -1, _id: -1 },
+  { name: 'post_status_type_media_published' },
+);
+/** One coach's posts, newest first (a coach profile's Posts). */
+postSchema.index({ authorCoachId: 1, status: 1, publishedAt: -1, _id: -1 }, { name: 'post_coach_published' });
 /** An author's own posts. */
 postSchema.index({ authorUserId: 1, status: 1, publishedAt: -1, _id: -1 }, { name: 'post_author_published' });
 /** A retried draft create finds the first one. */

@@ -3,6 +3,7 @@ import {
   deletePost,
   editPost,
   getPost,
+  homePreview,
   likePost,
   listFeed,
   listOwnPosts,
@@ -26,9 +27,17 @@ const pageQuery = (req) => ({ type: req.query.type, limit: req.query.limit, curs
 
 // --- member and coach: reading, likes, saves ---------------------------------
 
-/** GET /api/feed?type=all|article|transformation&limit=&cursor= */
+/** GET /api/feed?type=all|article|transformation&mediaType=all|images|video&coachId=&limit=&cursor= */
 export const getFeed = handle(async (req, res) => {
-  res.status(200).json({ success: true, data: await listFeed(req.user, pageQuery(req)) });
+  res.status(200).json({
+    success: true,
+    data: await listFeed(req.user, { ...pageQuery(req), mediaType: req.query.mediaType, coachId: req.query.coachId }),
+  });
+});
+
+/** GET /api/feed/home-preview - Home's four sections, newest few of each. */
+export const getHomePreview = handle(async (req, res) => {
+  res.status(200).json({ success: true, data: await homePreview(req.user) });
 });
 
 /** GET /api/feed/posts/:id */
@@ -64,7 +73,7 @@ export const getMyPosts = handle(async (req, res) => {
   res.status(200).json({ success: true, data: await listOwnPosts(req.user, pageQuery(req)) });
 });
 
-/** POST /api/coach/feed/posts - { type, title, text, mediaType, mediaCount, aspectRatio?, crops?, clientRequestId? } */
+/** POST /api/coach/feed/posts - { type, text, mediaType, mediaCount, aspectRatio?, crops?, clientRequestId? } */
 export const postDraft = handle(async (req, res) => {
   res.status(201).json({ success: true, data: { post: await createDraft(req.user, req.body) } });
 });
@@ -90,7 +99,7 @@ export const postPublish = handle(async (req, res) => {
   res.status(200).json({ success: true, data: { post: await publishPost(req.user, req.params.id) } });
 });
 
-/** PATCH /api/coach/feed/posts/:id - { title?, text? } */
+/** PATCH /api/coach/feed/posts/:id - { text } (the description) */
 export const patchPost = handle(async (req, res) => {
   res.status(200).json({ success: true, data: { post: await editPost(req.user, req.params.id, req.body) } });
 });

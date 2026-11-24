@@ -58,7 +58,6 @@ const raw = async (method, url, token, buffer, contentType = 'image/jpeg') => {
 
 const draftBody = (overrides = {}) => ({
   type: 'article',
-  title: 'Protein basics',
   text: 'Eat enough protein every day.',
   mediaType: 'images',
   mediaCount: 1,
@@ -131,8 +130,9 @@ test('a coach creates, uploads and publishes an article; it is stored as a coach
 
   assert.equal(post.authorType, 'coach');
   assert.equal(post.type, 'article');
-  assert.equal(post.title, 'Protein basics');
+  assert.equal(post.title, '', 'new posts have no title');
   assert.equal(post.text, 'Eat enough protein every day.');
+  assert.equal((await Post.findById(post.id).lean()).title, undefined, 'and none is stored');
   assert.equal(post.mediaType, 'images');
   assert.deepEqual(post.media.map((m) => [m.kind, m.position, m.width, m.height]), [['image', 0, 1080, 1350], ['image', 1, 1080, 1350]]);
   assert.deepEqual(post.author, {
@@ -182,20 +182,20 @@ test('a coach can edit and delete only their own posts', async () => {
   const b = await seedCoach();
   const post = await publishImages(a.token);
 
-  assert.equal((await api('PATCH', `/api/coach/feed/posts/${post.id}`, b.token, { title: 'Mine now' })).status, 404);
+  assert.equal((await api('PATCH', `/api/coach/feed/posts/${post.id}`, b.token, { text: 'Mine now' })).status, 404);
   assert.equal((await api('DELETE', `/api/coach/feed/posts/${post.id}`, b.token)).status, 404);
   assert.equal((await raw('PUT', `/api/coach/feed/posts/${post.id}/media/0`, b.token, jpeg())).status, 404);
   const stored = await Post.findById(post.id).lean();
-  assert.equal(stored.title, 'Protein basics');
+  assert.equal(stored.text, 'Eat enough protein every day.');
   assert.equal(stored.status, 'published');
 
   // Coach B sees A's post in the Feed but cannot edit it.
   const seenByB = (await feed(b.token)).posts.find((p) => p.id === post.id);
   assert.equal(seenByB.canEdit, false);
 
-  const edited = await api('PATCH', `/api/coach/feed/posts/${post.id}`, a.token, { title: 'Protein, simply', text: 'Every meal.' });
+  const edited = await api('PATCH', `/api/coach/feed/posts/${post.id}`, a.token, { text: 'Every meal.' });
   assert.equal(edited.status, 200);
-  assert.equal(edited.body.data.post.title, 'Protein, simply');
+  assert.equal(edited.body.data.post.title, '');
   assert.equal(edited.body.data.post.text, 'Every meal.');
   assert.ok(edited.body.data.post.editedAt);
   assert.equal((await api('DELETE', `/api/coach/feed/posts/${post.id}`, a.token)).status, 200);
@@ -237,10 +237,9 @@ test('with the capability switched on (tests only), a member post uses the same 
 
 // --- content -------------------------------------------------------------------
 
-test('article and transformation posts; title and caption limits are enforced, never truncated', async () => {
+test('article and transformation posts; the description limit is enforced, never truncated', async () => {
   const coach = await seedCoach();
-  const article = await publishImages(coach.token, 1, { type: 'article', title: 'a'.repeat(150), text: 'b'.repeat(2000) });
-  assert.equal(article.title.length, 150);
+  const article = await publishImages(coach.token, 1, { type: 'article', text: 'b'.repeat(2000) });
   assert.equal(article.text.length, 2000);
   assert.equal((await publishImages(coach.token, 1, { type: 'transformation' })).type, 'transformation');
 
@@ -249,16 +248,18 @@ test('article and transformation posts; title and caption limits are enforced, n
     assert.equal(res.status, 400, JSON.stringify(overrides));
     assert.match(res.body.error.message, pattern);
   };
-  await refused({ title: 'a'.repeat(151) }, /title must be at most 150/);
   await refused({ text: 'b'.repeat(2001) }, /text must be at most 2000/);
-  await refused({ title: '   ' }, /title is required/);
+  await refused({ text: '   ' }, /text is required/);
   await refused({ text: '' }, /text is required/);
+  await refused({ text: undefined }, /text is required/);
   await refused({ type: 'story' }, /type must be one of/);
   await refused({ mediaType: 'audio' }, /mediaType/);
 
-  const tooLong = await api('PATCH', `/api/coach/feed/posts/${article.id}`, coach.token, { title: 'a'.repeat(151) });
+  const tooLong = await api('PATCH', `/api/coach/feed/posts/${article.id}`, coach.token, { text: 'c'.repeat(2001) });
   assert.equal(tooLong.status, 400);
-  assert.equal((await Post.findById(article.id).lean()).title, 'a'.repeat(150));
+  const blank = await api('PATCH', `/api/coach/feed/posts/${article.id}`, coach.token, { text: '  ' });
+  assert.equal(blank.status, 400);
+  assert.equal((await Post.findById(article.id).lean()).text, 'b'.repeat(2000), 'a refused edit changes nothing');
 });
 
 // --- media -----------------------------------------------------------------------
@@ -316,13 +317,14 @@ test('video: the thumbnail is optional - without one it publishes with thumbnail
   assert.ok(feed.body.data.posts.some((p) => p.id === noThumb.id));
 });
 
-test('editing a video post (title / text) keeps its thumbnail', async () => {
+test('editing a video post (description) keeps its thumbnail', async () => {
   const coach = await seedCoach();
   const post = await publishVideo(coach.token);
   const before = post.media[0].thumbnailUrl;
   assert.ok(before);
-  const res = await api('PATCH', `/api/coach/feed/posts/${post.id}`, coach.token, { title: 'New title', text: 'New text' });
+  const res = await api('PATCH', `/api/coach/feed/posts/${post.id}`, coach.token, { text: 'New text' });
   assert.equal(res.status, 200);
+  assert.equal(res.body.data.post.text, 'New text');
   assert.equal(res.body.data.post.media[0].thumbnailUrl, before);
   assert.equal((await Post.findById(post.id).lean()).media[0].thumbnailUrl, before);
 });
@@ -370,7 +372,7 @@ test('an incomplete draft cannot publish, including when a stored file has gone 
   assert.deepEqual(await feedIds(viewer.token), [], 'a draft is never in the Feed');
 });
 
-test('media cannot be changed after publishing; edits take title and text only', async () => {
+test('media cannot be changed after publishing; edits take the description only', async () => {
   const coach = await seedCoach();
   const post = await publishImages(coach.token, 2);
 
@@ -378,9 +380,9 @@ test('media cannot be changed after publishing; edits take title and text only',
   assert.equal(replace.status, 409);
   assert.equal(replace.body.error.code, 'POST_NOT_EDITABLE');
 
-  const withMedia = await api('PATCH', `/api/coach/feed/posts/${post.id}`, coach.token, { title: 'x', media: [] });
+  const withMedia = await api('PATCH', `/api/coach/feed/posts/${post.id}`, coach.token, { text: 'x', media: [] });
   assert.equal(withMedia.status, 400);
-  assert.match(withMedia.body.error.message, /Only title and text/);
+  assert.match(withMedia.body.error.message, /Only the text/);
   assert.equal((await api('PATCH', `/api/coach/feed/posts/${post.id}`, coach.token, { type: 'transformation' })).status, 400);
 
   const stored = await Post.findById(post.id).lean();
@@ -777,4 +779,306 @@ test('aspect ratio and crops: old posts read as none; bad values are refused', a
     const res = await api('POST', '/api/coach/feed/posts', coach.token, draftBody(overrides));
     assert.equal(res.status, 400, JSON.stringify(overrides));
   }
+});
+
+// --- Home preview and the media filter --------------------------------------------
+
+const homePreview = async (token) => {
+  const res = await api('GET', '/api/feed/home-preview', token);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return res.body.data;
+};
+
+test('home preview: four sections, newest three of each, each one post type in one media type', async () => {
+  const coach = await seedCoach({ name: 'Asha Coach' });
+  const member = await seedUser();
+  const tImages = [];
+  const aImages = [];
+  const tVideos = [];
+  const aVideos = [];
+  for (let i = 0; i < 4; i += 1) {
+    tImages.push(await publishImages(coach.token, 2, { type: 'transformation' }));
+    aImages.push(await publishImages(coach.token, 1, { type: 'article' }));
+    tVideos.push(await publishVideo(coach.token, { type: 'transformation' }));
+    aVideos.push(await publishVideo(coach.token, { type: 'article' }));
+  }
+  const newest3 = (list) => list.slice(-3).reverse().map((p) => p.id);
+  const data = await homePreview(member.token);
+
+  assert.deepEqual(Object.keys(data).sort(), ['articlePosts', 'articleVideos', 'transformationPosts', 'transformationVideos']);
+  assert.deepEqual(data.transformationPosts.map((p) => p.id), newest3(tImages));
+  assert.deepEqual(data.articlePosts.map((p) => p.id), newest3(aImages));
+  assert.deepEqual(data.transformationVideos.map((p) => p.id), newest3(tVideos));
+  assert.deepEqual(data.articleVideos.map((p) => p.id), newest3(aVideos));
+
+  const image = data.transformationPosts[0];
+  assert.equal(image.type, 'transformation');
+  assert.equal(image.mediaType, 'images');
+  assert.equal(image.mediaCount, 2);
+  assert.equal(image.author.name, 'Asha Coach');
+  assert.match(image.author.avatarUrl, /p\.jpg$/);
+  assert.equal(image.cover.kind, 'image');
+  assert.equal(image.cover.width, 1080);
+  assert.equal(image.cover.height, 1350);
+  assert.equal(image.cover.durationMs, null);
+  assert.ok(image.cover.url);
+  assert.ok(image.publishedAt);
+
+  const video = data.articleVideos[0];
+  assert.equal(video.mediaType, 'video');
+  assert.equal(video.cover.kind, 'video');
+  assert.equal(video.cover.durationMs, 28000);
+  assert.equal(video.cover.width, 720);
+  assert.match(video.cover.url, /thumb|\.jpe?g/i, 'a video cover is its poster, not the video file');
+  assert.doesNotMatch(video.cover.url, /\.mp4$/);
+
+  // Lightweight: the description only (no title), no per-viewer state, no full media list.
+  assert.equal(video.text, 'Eat enough protein every day.');
+  for (const key of ['title', 'likedByMe', 'savedByMe', 'likeCount', 'media', 'canEdit']) {
+    assert.equal(key in video, false, `${key} is not part of a preview`);
+  }
+});
+
+test('home preview: only visible posts; empty sections are empty lists; sign-in required', async () => {
+  const shown = await seedCoach();
+  const inactive = await seedCoach({ status: 'inactive' });
+  const member = await seedUser();
+
+  assert.deepEqual(await homePreview(member.token), {
+    transformationPosts: [],
+    articlePosts: [],
+    transformationVideos: [],
+    articleVideos: [],
+  });
+
+  const visible = await publishImages(shown.token, 1, { type: 'article' });
+  const removed = await publishImages(shown.token, 1, { type: 'article' });
+  const hidden = await publishVideo(shown.token, { type: 'article' });
+  await Post.updateOne({ _id: removed.id }, { $set: { status: 'removed' } });
+  await Post.updateOne({ _id: hidden.id }, { $set: { status: 'hidden' } });
+  await Post.create({
+    authorUserId: inactive.user._id,
+    authorType: 'coach',
+    authorCoachId: inactive.coach._id,
+    type: 'article',
+    title: 'From an inactive coach',
+    text: 'Never shown.',
+    mediaType: 'images',
+    media: [{ id: 'x', kind: 'image', position: 0, url: 'http://example.test/x.jpg', storageKey: 'x' }],
+    status: 'published',
+    publishedAt: new Date(),
+  });
+  await createPostDraft(shown.token, { type: 'article' }); // never published
+
+  const data = await homePreview(member.token);
+  assert.deepEqual(data.articlePosts.map((p) => p.id), [visible.id]);
+  assert.deepEqual(data.articleVideos, []);
+  assert.deepEqual(data.transformationPosts, []);
+
+  assert.equal((await api('GET', '/api/feed/home-preview')).status, 401);
+});
+
+test('home preview: a video published without a poster still previews, with a null cover url', async () => {
+  const coach = await seedCoach();
+  const member = await seedUser();
+  const draft = await createPostDraft(coach.token, { mediaType: 'video', mediaCount: 1, type: 'transformation' });
+  await raw('PUT', `/api/coach/feed/posts/${draft.id}/media/0?width=1280&height=720`, coach.token, mp4(), 'video/mp4');
+  assert.equal((await api('POST', `/api/coach/feed/posts/${draft.id}/publish`, coach.token)).status, 200);
+
+  const [preview] = (await homePreview(member.token)).transformationVideos;
+  assert.equal(preview.id, draft.id);
+  assert.equal(preview.cover.url, null);
+  assert.equal(preview.cover.durationMs, null);
+  assert.equal(preview.cover.width, 1280);
+});
+
+test('the media filter narrows the Feed with type, pages with a cursor, and is optional', async () => {
+  const coach = await seedCoach();
+  const member = await seedUser();
+  const videos = [];
+  for (let i = 0; i < 5; i += 1) {
+    videos.push(await publishVideo(coach.token, { type: 'article' }));
+    await publishImages(coach.token, 1, { type: 'article' });
+  }
+  const transformationVideo = await publishVideo(coach.token, { type: 'transformation' });
+
+  const first = await feed(member.token, '?type=article&mediaType=video&limit=3');
+  assert.deepEqual(first.posts.map((p) => p.id), videos.slice(2).reverse().map((p) => p.id));
+  assert.ok(first.nextCursor);
+  const second = await feed(member.token, `?type=article&mediaType=video&limit=3&cursor=${encodeURIComponent(first.nextCursor)}`);
+  assert.deepEqual(second.posts.map((p) => p.id), videos.slice(0, 2).reverse().map((p) => p.id));
+  assert.equal(second.nextCursor, null);
+
+  assert.deepEqual(await feedIds(member.token, '?mediaType=video&type=transformation'), [transformationVideo.id]);
+  assert.equal((await feedIds(member.token, '?mediaType=images')).length, 5);
+  assert.equal((await feedIds(member.token, '?mediaType=all')).length, 11);
+  assert.equal((await feedIds(member.token)).length, 11, 'no media filter is the whole Feed, as before');
+  assert.equal((await api('GET', '/api/feed?mediaType=gif', member.token)).status, 400);
+});
+
+
+// --- posts without titles -------------------------------------------------------------
+
+const legacyPost = (coach, fields) =>
+  Post.create({
+    authorUserId: coach.user._id,
+    authorType: 'coach',
+    authorCoachId: coach.coach._id,
+    type: 'article',
+    mediaType: 'images',
+    media: [{ id: 'm1', kind: 'image', position: 0, url: 'http://example.test/old.jpg', storageKey: 'old.jpg' }],
+    status: 'published',
+    publishedAt: new Date(),
+    ...fields,
+  });
+
+test('a title sent by an older app is ignored: the post is saved with its description only', async () => {
+  const coach = await seedCoach();
+  const post = await publishImages(coach.token, 1, { title: 'Old app title', text: 'The description.' });
+  assert.equal(post.title, '');
+  assert.equal(post.text, 'The description.');
+  const stored = await Post.findById(post.id).lean();
+  assert.equal(stored.title, undefined);
+  assert.equal(stored.text, 'The description.');
+});
+
+test('existing posts with a title keep it untouched; editing changes the description only', async () => {
+  const coach = await seedCoach();
+  const member = await seedUser();
+  const old = await legacyPost(coach, { title: 'Legacy title', text: 'Legacy description.' });
+
+  // Still listed, opened and previewed, with both fields as stored.
+  const listed = (await feed(member.token)).posts.find((p) => p.id === String(old._id));
+  assert.equal(listed.title, 'Legacy title');
+  assert.equal(listed.text, 'Legacy description.');
+  const opened = await api('GET', `/api/feed/posts/${old._id}`, member.token);
+  assert.equal(opened.body.data.post.text, 'Legacy description.');
+  const [preview] = (await homePreview(member.token)).articlePosts;
+  assert.equal(preview.text, 'Legacy description.', 'the description, not the title, nor both');
+
+  // An older app's edit sends both; the title is left exactly as it was.
+  const edited = await api('PATCH', `/api/coach/feed/posts/${old._id}`, coach.token, { title: 'Changed?', text: 'New description.' });
+  assert.equal(edited.status, 200);
+  const stored = await Post.findById(old._id).lean();
+  assert.equal(stored.title, 'Legacy title');
+  assert.equal(stored.text, 'New description.');
+
+  // A title-only edit (no text) changes nothing and is refused.
+  assert.equal((await api('PATCH', `/api/coach/feed/posts/${old._id}`, coach.token, { title: 'x' })).status, 400);
+  assert.equal((await Post.findById(old._id).lean()).text, 'New description.');
+});
+
+test('a post with a description and no title, and a title-only legacy record, both read', async () => {
+  const coach = await seedCoach();
+  const member = await seedUser();
+  const noTitle = await legacyPost(coach, { text: 'Only a description.' });
+  // A record with no description cannot be created through the API; written
+  // directly, it must still read, with its title standing in on Home.
+  const { insertedId } = await Post.collection.insertOne({
+    authorUserId: coach.user._id,
+    authorType: 'coach',
+    authorCoachId: coach.coach._id,
+    type: 'transformation',
+    title: 'Only a title',
+    mediaType: 'images',
+    media: [{ id: 'm1', kind: 'image', position: 0, url: 'http://example.test/t.jpg', storageKey: 't.jpg' }],
+    status: 'published',
+    publishedAt: new Date(Date.now() - 1000),
+  });
+
+  const posts = (await feed(member.token)).posts;
+  const a = posts.find((p) => p.id === String(noTitle._id));
+  assert.equal(a.title, '');
+  assert.equal(a.text, 'Only a description.');
+  const b = posts.find((p) => p.id === String(insertedId));
+  assert.equal(b.title, 'Only a title');
+
+  const data = await homePreview(member.token);
+  assert.equal(data.articlePosts[0].text, 'Only a description.');
+  assert.equal(data.transformationPosts[0].text, 'Only a title');
+});
+
+test('home preview cards carry the description, cut to a card-sized excerpt', async () => {
+  const coach = await seedCoach();
+  const member = await seedUser();
+  await publishVideo(coach.token, { type: 'article', text: 'w'.repeat(2000) });
+  await publishImages(coach.token, 1, { type: 'transformation', text: 'Short.' });
+  const data = await homePreview(member.token);
+  const long = data.articleVideos[0].text;
+  assert.equal(long.length, 200);
+  assert.ok(long.endsWith('…'));
+  assert.equal(data.transformationPosts[0].text, 'Short.');
+  assert.equal('title' in data.transformationPosts[0], false);
+});
+
+// --- a coach profile's posts ------------------------------------------------------
+
+test('coach filter: only that coach\'s visible posts, by type, images and video alike', async () => {
+  const a = await seedCoach();
+  const b = await seedCoach();
+  const member = await seedUser();
+  const aArticle = await publishImages(a.token, 2, { type: 'article' });
+  const aTransformation = await publishImages(a.token, 1, { type: 'transformation' });
+  const aVideo = await publishVideo(a.token, { type: 'transformation' });
+  const aArticleVideo = await publishVideo(a.token, { type: 'article' });
+  await publishImages(b.token, 1, { type: 'article' });
+  await publishVideo(b.token, { type: 'transformation' });
+  const removed = await publishImages(a.token, 1, { type: 'article' });
+  const hidden = await publishImages(a.token, 1, { type: 'article' });
+  await api('DELETE', `/api/coach/feed/posts/${removed.id}`, a.token);
+  await Post.updateOne({ _id: hidden.id }, { status: 'hidden' });
+  await createPostDraft(a.token, { type: 'article' }); // never published
+
+  const coachId = String(a.coach._id);
+  const all = await feed(member.token, `?coachId=${coachId}`);
+  assert.deepEqual(all.posts.map((p) => p.id), [aArticleVideo.id, aVideo.id, aTransformation.id, aArticle.id]);
+  assert.ok(all.posts.every((p) => p.author.coachId === coachId));
+  assert.deepEqual(
+    await feedIds(member.token, `?coachId=${coachId}&type=transformation`),
+    [aVideo.id, aTransformation.id],
+  );
+  assert.deepEqual(await feedIds(member.token, `?coachId=${coachId}&type=article`), [aArticleVideo.id, aArticle.id]);
+
+  // Another coach's profile never shows A's posts.
+  const bIds = await feedIds(member.token, `?coachId=${b.coach._id}`);
+  assert.equal(bIds.length, 2);
+  assert.ok(!bIds.some((id) => all.posts.map((p) => p.id).includes(id)));
+
+  // An inactive coach's profile shows nothing; a bad id is refused, never "everyone".
+  await Coach.updateOne({ _id: a.coach._id }, { status: 'inactive' });
+  assert.deepEqual(await feedIds(member.token, `?coachId=${coachId}`), []);
+  assert.equal((await api('GET', '/api/feed?coachId=nope', member.token)).status, 400);
+  assert.equal((await feedIds(member.token)).length, 2, 'no coach filter is the whole Feed, as before');
+});
+
+test('coach filter pages with a cursor, every post once', async () => {
+  const coach = await seedCoach();
+  const other = await seedCoach();
+  const member = await seedUser();
+  const base = Date.now();
+  const make = (c, i) => ({
+    authorUserId: c.user._id,
+    authorType: 'coach',
+    authorCoachId: c.coach._id,
+    type: i % 2 ? 'article' : 'transformation',
+    title: `p${i}`,
+    text: 'x',
+    mediaType: 'images',
+    media: [{ id: 'm', kind: 'image', position: 0, url: `http://example.test/${i}.jpg`, storageKey: `${i}.jpg` }],
+    status: 'published',
+    // Same instant for pairs, so the _id tie-break is exercised.
+    publishedAt: new Date(base - Math.floor(i / 2) * 1000),
+  });
+  await Post.insertMany([...Array.from({ length: 25 }, (_, i) => make(coach, i)), ...Array.from({ length: 5 }, (_, i) => make(other, i))]);
+
+  const seen = [];
+  let cursor;
+  do {
+    const qs = `?coachId=${coach.coach._id}&limit=7${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+    const pageData = await feed(member.token, qs);
+    seen.push(...pageData.posts.map((p) => p.id));
+    cursor = pageData.nextCursor;
+  } while (cursor);
+  assert.equal(seen.length, 25);
+  assert.equal(new Set(seen).size, 25, 'no duplicates across pages');
 });

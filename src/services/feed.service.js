@@ -6,10 +6,10 @@ import { ROLE_COACH, hasRole } from '../constants/roles.js';
 import Coach from '../models/coach.model.js';
 import Post, {
   CROP_MAX_ZOOM,
+  MEDIA_TYPES,
   POST_ASPECT_RATIOS,
   POST_MAX_IMAGES,
   POST_TEXT_MAX,
-  POST_TITLE_MAX,
   POST_TYPES,
 } from '../models/post.model.js';
 import PostLike from '../models/post-like.model.js';
@@ -90,6 +90,13 @@ const pageSize = (value) => {
 const feedType = (value) => {
   if (value === undefined || value === 'all') return null;
   return postType(value);
+};
+
+/** `images` or `video` narrows a list; absent or `all` leaves it whole. */
+const feedMediaType = (value) => {
+  if (value === undefined || value === 'all') return null;
+  if (!MEDIA_TYPES.includes(value)) throw invalid(`mediaType must be one of: all, ${MEDIA_TYPES.join(', ')}`);
+  return value;
 };
 
 /** An optional measured size: a whole number in range, or null. */
@@ -202,7 +209,7 @@ const toMediaView = (m) => ({
  * the viewer's likes and saves are read once for the whole page. A post whose
  * author can no longer be shown (inactive, deleted) is dropped.
  */
-const present = async (docs, viewerId, { requireActiveAuthor = true } = {}) => {
+const present = async (docs, viewerId, { requireActiveAuthor = true, viewerState = true } = {}) => {
   if (docs.length === 0) return [];
   const ids = docs.map((d) => d._id);
   const coachIds = docs.filter((d) => d.authorCoachId).map((d) => d.authorCoachId);
@@ -212,8 +219,8 @@ const present = async (docs, viewerId, { requireActiveAuthor = true } = {}) => {
       { _id: { $in: docs.map((d) => d.authorUserId) } },
       { status: 1, 'profile.name': 1, 'profile.profilePicture': 1 },
     ).lean(),
-    PostLike.find({ userId: viewerId, postId: { $in: ids } }, { postId: 1 }).lean(),
-    PostSave.find({ userId: viewerId, postId: { $in: ids } }, { postId: 1 }).lean(),
+    viewerState ? PostLike.find({ userId: viewerId, postId: { $in: ids } }, { postId: 1 }).lean() : [],
+    viewerState ? PostSave.find({ userId: viewerId, postId: { $in: ids } }, { postId: 1 }).lean() : [],
   ]);
   const coachById = new Map(coaches.map((c) => [String(c._id), c]));
   const userById = new Map(users.map((u) => [String(u._id), u]));
@@ -233,7 +240,9 @@ const present = async (docs, viewerId, { requireActiveAuthor = true } = {}) => {
         id,
         authorType: doc.authorType,
         type: doc.type,
-        title: doc.title,
+        // Older posts may have a title; new ones never do. Still sent, so
+        // older apps keep reading posts.
+        title: doc.title ?? '',
         text: doc.text,
         status: doc.status,
         publishedAt: doc.publishedAt ? doc.publishedAt.toISOString() : null,
@@ -267,7 +276,7 @@ const toDraftView = (doc) => ({
   id: String(doc._id),
   status: doc.status,
   type: doc.type,
-  title: doc.title,
+  title: doc.title ?? '',
   text: doc.text,
   mediaType: doc.mediaType,
   aspectRatio: doc.aspectRatio ?? null,
@@ -309,7 +318,8 @@ export const cleanupAbandonedDrafts = async ({ authorUserId = null, now = new Da
 export const createDraft = async (user, body = {}) => {
   const author = await publisherOf(user);
   const type = postType(body.type);
-  const title = requiredText(body.title, 'title', POST_TITLE_MAX);
+  // The description is the post's only text. A `title` from an older app is
+  // ignored: new posts have none.
   const text = requiredText(body.text, 'text', POST_TEXT_MAX);
   if (body.mediaType !== 'images' && body.mediaType !== 'video') throw invalid("mediaType must be 'images' or 'video'");
   const count = Number(body.mediaCount ?? (body.mediaType === 'video' ? 1 : undefined));
@@ -338,7 +348,6 @@ export const createDraft = async (user, body = {}) => {
       authorUserId: user._id,
       ...author,
       type,
-      title,
       text,
       mediaType: body.mediaType,
       aspectRatio,
@@ -455,14 +464,16 @@ export const publishPost = async (user, postId) => {
   return (await present([doc], user._id, { requireActiveAuthor: false }))[0];
 };
 
-/** `PATCH /coach/feed/posts/:id` - title and text only. Media is fixed once published. */
+/**
+ * `PATCH /coach/feed/posts/:id` - the description (`text`) only. Media is fixed
+ * once published. A `title` from an older app is accepted and ignored, so an
+ * existing title is never changed or cleared.
+ */
 export const editPost = async (user, postId, body = {}) => {
   const other = Object.keys(body).filter((key) => key !== 'title' && key !== 'text');
-  if (other.length) throw invalid(`Only title and text can be edited (not ${other.join(', ')})`);
-  const set = {};
-  if (body.title !== undefined) set.title = requiredText(body.title, 'title', POST_TITLE_MAX);
-  if (body.text !== undefined) set.text = requiredText(body.text, 'text', POST_TEXT_MAX);
-  if (!Object.keys(set).length) throw invalid('Send a title or text to change');
+  if (other.length) throw invalid(`Only the text can be edited (not ${other.join(', ')})`);
+  if (body.text === undefined) throw invalid('Send the text to change');
+  const set = { text: requiredText(body.text, 'text', POST_TEXT_MAX) };
 
   const doc = await Post.findOneAndUpdate(
     { _id: objectId(postId), authorUserId: user._id, status: 'published' },
@@ -504,11 +515,109 @@ const page = async (query, sortField, { limit, cursor }, viewerId, presentOption
   };
 };
 
-/** `GET /feed` - every visible author's published posts, newest first. */
-export const listFeed = async (user, { type, limit, cursor } = {}) => {
+/** An optional coach filter: a valid id, or a 400 (never "everyone"). */
+const feedCoachId = (value) => {
+  if (value === undefined || value === '') return null;
+  if (!mongoose.isValidObjectId(value)) throw invalid('coachId must be a valid id');
+  return new mongoose.Types.ObjectId(String(value));
+};
+
+/**
+ * `GET /feed` - every visible author's published posts, newest first,
+ * optionally narrowed to one post type, one media type and/or one coach (a
+ * coach profile's posts). The coach filter is added on top of the visibility
+ * rules, so an inactive coach still shows nothing.
+ */
+export const listFeed = async (user, { type, mediaType, coachId, limit, cursor } = {}) => {
   const kind = feedType(type);
-  const query = await visibleQuery();
-  return page(kind ? { ...query, type: kind } : query, 'publishedAt', { limit, cursor }, user._id);
+  const media = feedMediaType(mediaType);
+  const coach = feedCoachId(coachId);
+  const visible = await visibleQuery();
+  const narrowed = { ...(kind ? { type: kind } : {}), ...(media ? { mediaType: media } : {}) };
+  const query = coach
+    ? { $and: [visible, { authorType: 'coach', authorCoachId: coach, ...narrowed }] }
+    : { ...visible, ...narrowed };
+  return page(query, 'publishedAt', { limit, cursor }, user._id);
+};
+
+export const HOME_PREVIEW_SIZE = 3;
+
+/** Home's four sections: each is one post type in one media type. */
+export const HOME_SECTIONS = {
+  transformationPosts: { type: 'transformation', mediaType: 'images' },
+  articlePosts: { type: 'article', mediaType: 'images' },
+  transformationVideos: { type: 'transformation', mediaType: 'video' },
+  articleVideos: { type: 'article', mediaType: 'video' },
+};
+
+/** What a preview card needs: no caption, likes or saves. */
+const PREVIEW_FIELDS = {
+  authorUserId: 1,
+  authorType: 1,
+  authorCoachId: 1,
+  type: 1,
+  title: 1,
+  text: 1,
+  mediaType: 1,
+  aspectRatio: 1,
+  media: 1,
+  status: 1,
+  publishedAt: 1,
+};
+
+export const PREVIEW_TEXT_MAX = 200;
+
+const excerpt = (text) => (text.length > PREVIEW_TEXT_MAX ? `${text.slice(0, PREVIEW_TEXT_MAX - 1).trimEnd()}…` : text);
+
+/** A presented post cut down to one card: its first media item as the cover. */
+const toPreview = (post) => {
+  const cover = post.media[0];
+  return {
+    id: post.id,
+    type: post.type,
+    mediaType: post.mediaType,
+    // The description, cut to what a card can show; an older title-only post
+    // shows its title.
+    text: excerpt(post.text || post.title || ''),
+    publishedAt: post.publishedAt,
+    author: { name: post.author.name, avatarUrl: post.author.avatarUrl, verified: post.author.verified },
+    aspectRatio: post.aspectRatio,
+    mediaCount: post.media.length,
+    cover: cover
+      ? {
+          kind: cover.kind,
+          // A video's cover is its poster; one uploaded without a poster has none.
+          url: cover.kind === 'video' ? cover.thumbnailUrl : cover.url,
+          width: cover.width,
+          height: cover.height,
+          aspectRatio: cover.aspectRatio,
+          crop: cover.crop,
+          durationMs: cover.kind === 'video' ? cover.durationMs : null,
+        }
+      : null,
+  };
+};
+
+/**
+ * `GET /feed/home-preview` - the newest [HOME_PREVIEW_SIZE] visible posts of
+ * each Home section, in one response. Four small indexed reads run together,
+ * then the authors of all of them are read once.
+ */
+export const homePreview = async (user) => {
+  const visible = await visibleQuery();
+  const sections = Object.entries(HOME_SECTIONS);
+  const lists = await Promise.all(
+    sections.map(([, filter]) =>
+      Post.find({ ...visible, ...filter }, PREVIEW_FIELDS)
+        .sort({ publishedAt: -1, _id: -1 })
+        .limit(HOME_PREVIEW_SIZE)
+        .lean(),
+    ),
+  );
+  const shown = new Map((await present(lists.flat(), user._id, { viewerState: false })).map((p) => [p.id, p]));
+  return Object.fromEntries(
+    sections.map(([key], i) => [key, lists[i].flatMap((doc) => (shown.has(String(doc._id)) ? [toPreview(shown.get(String(doc._id)))] : []))]),
+  );
 };
 
 /** `GET /coach/feed/posts` - the caller's own published posts, newest first. */
