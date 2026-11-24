@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { enrollmentLifecycle, enrollmentStatus, notEndedCutoff } from '../../src/models/enrolled-client.model.js';
+import { enrollmentLifecycle, enrollmentStatus, notEndedCutoff, unlocksPlan } from '../../src/models/enrolled-client.model.js';
 import { addCalendarDays, startOfBusinessDay } from '../../src/utils/business-date.js';
 
 /**
@@ -50,4 +50,21 @@ test('notEndedCutoff is the instant today begins in IST (the query form of the i
   assert.deepEqual(notEndedCutoff(ist('2027-02-10T23:59:59.999')), startOfBusinessDay('2027-02-10'));
   assert.ok(started.endDate >= notEndedCutoff(ist('2027-02-10T23:59:59.999')));
   assert.ok(started.endDate < notEndedCutoff(ist('2027-02-11T00:00:00')));
+});
+
+test('unlocksPlan: from the coach\'s Start (first day tomorrow) through the last day, never before or after', () => {
+  const click = ist('2026-11-18T14:00:00');
+  const coachStarted = { ...started, startedAt: click };
+  assert.equal(unlocksPlan({ hasStarted: false }, click), false, 'bought, not started');
+  assert.equal(unlocksPlan(coachStarted, ist('2026-11-18T13:59:59')), false, 'before the click');
+  assert.equal(unlocksPlan(coachStarted, click), true, 'at the click');
+  assert.equal(unlocksPlan(coachStarted, ist('2026-11-18T14:01:00')), true, 'the same afternoon');
+  assert.equal(unlocksPlan(coachStarted, ist('2026-11-18T23:59:59.999')), true);
+  assert.equal(enrollmentLifecycle(coachStarted, ist('2026-11-18T14:01:00')), 'scheduled', 'official lifecycle unchanged');
+  assert.equal(unlocksPlan(coachStarted, ist('2027-02-10T23:59:59.999')), true, 'the last day');
+  assert.equal(unlocksPlan(coachStarted, ist('2027-02-11T00:00:00')), false, 'expired at 00:00 IST after it');
+  assert.equal(unlocksPlan({ ...coachStarted, isDeleted: true }, click), false, 'deleted');
+  // Dated ahead with no coach Start (e.g. an admin enrollment): waits for its first day.
+  assert.equal(unlocksPlan(started, ist('2026-11-18T14:01:00')), false);
+  assert.equal(unlocksPlan(started, ist('2026-11-19T00:00:00')), true);
 });

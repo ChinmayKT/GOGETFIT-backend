@@ -62,8 +62,10 @@ const body = (overrides = {}, payment = {}) => ({
   planId: String(plan._id),
   coachId: String(coach._id),
   enrollDate: '2026-10-01',
-  startDate: '2026-10-02',
-  endDate: '2026-12-24',
+  // Undated by default: a member can hold several bought plans, but only one
+  // started plan's days at a time (tests that need dates pass them).
+  startDate: null,
+  endDate: null,
   couponId: null,
   ...overrides,
   payment: { method: 'cash', amount: 4999, paymentDate: '2026-10-01', referenceId: null, notes: null, ...payment },
@@ -102,7 +104,7 @@ after(async () => {
 // --- creation --------------------------------------------------------------------------
 
 test('1, 22, 26, 27, 29. an admin records a cash enrollment in the existing enrolledclients collection', async () => {
-  const res = await create(body({}, { notes: 'Cash collected at the studio', referenceId: 'RCPT-1' }));
+  const res = await create(body({ startDate: '2026-10-02', endDate: '2026-12-24' }, { notes: 'Cash collected at the studio', referenceId: 'RCPT-1' }));
   assert.equal(res.status, 201, JSON.stringify(res.body));
   const { enrolledClient, pricing } = res.body.data;
 
@@ -224,7 +226,7 @@ test('10-12. start and end dates are optional; hasStarted follows the start date
   delete omitted.endDate;
   assert.equal((await create(omitted)).status, 201);
 
-  const startOnly = await create(body({ endDate: null }));
+  const startOnly = await create(body({ startDate: '2026-10-02', endDate: null }));
   assert.equal(startOnly.status, 201);
   doc = await stored(startOnly.body.data.enrolledClient.id);
   assert.equal(doc.startDate.toISOString(), istDay('2026-10-02'));
@@ -394,7 +396,9 @@ test('31. existing (migrated) enrollments are left exactly as they were', async 
 // --- reading it back ---------------------------------------------------------------------
 
 test('32-36. the new enrollment shows in Client Details and the Clients list, with plan, coach and coupon resolved', async () => {
-  const res = await create(body({ couponId: String(coupons.private20._id) }, { method: 'upi', referenceId: 'UTR555', amount: 4000 }));
+  const res = await create(
+    body({ couponId: String(coupons.private20._id), startDate: '2026-10-02', endDate: '2026-12-24' }, { method: 'upi', referenceId: 'UTR555', amount: 4000 }),
+  );
   const id = res.body.data.enrolledClient.id;
 
   const detail = (await server.request('GET', `/api/admin/enrolled-clients/${id}`, { token: adminToken })).body.data.enrolledClient;
@@ -460,4 +464,51 @@ test('priceAfterCoupon follows the legacy integer rule', () => {
   assert.equal(priceAfterCoupon(12000, 10).finalAmount, 10800);
   assert.equal(priceAfterCoupon(4999, 0).finalAmount, 4999);
   assert.equal(priceAfterCoupon(4999, 100).finalAmount, 0);
+});
+
+// --- one plan at a time -----------------------------------------------------------------
+
+test('a dated manual enrollment that meets another started plan of the member is refused (409 PLAN_OVERLAP); history and undated ones are fine', async () => {
+  assert.equal((await create(body({ startDate: '2026-10-02', endDate: '2026-12-24' }))).status, 201);
+  const overlapping = await create(body({ startDate: '2026-12-24', endDate: '2027-03-01' }));
+  assert.equal(overlapping.status, 409, JSON.stringify(overlapping.body));
+  assert.equal(overlapping.body.error.code, 'PLAN_OVERLAP');
+  assert.equal(await EnrolledClient.countDocuments({ userId: member._id }), 1, 'nothing written');
+
+  assert.equal((await create(body({ startDate: '2026-01-01', endDate: '2026-03-31' }))).status, 201, 'an earlier cycle (history)');
+  assert.equal((await create(body({ startDate: null, endDate: null }))).status, 201, 'bought, not started');
+
+  // A coach-started plan counts from its Start day (immediate access).
+  await EnrolledClient.updateOne(
+    { userId: member._id, startDate: null },
+    { $set: { hasStarted: true, startedAt: new Date(istDay('2027-01-09')), startDate: new Date(istDay('2027-01-10')), endDate: new Date(istDay('2027-04-03')) } },
+  );
+  const onStartDay = await create(body({ startDate: '2026-12-25', endDate: '2027-01-09' }));
+  assert.equal(onStartDay.status, 409);
+  assert.equal((await create(body({ startDate: '2026-12-25', endDate: '2027-01-08' }))).status, 201, 'the days between');
+});
+
+test('a dated manual enrollment for an unknown member is 404 and leaves no plan-start lock behind', async () => {
+  const lockOf = (id) => mongoose.connection.collection('planstartlocks').findOne({ _id: new mongoose.Types.ObjectId(String(id)) });
+  const unknownId = new mongoose.Types.ObjectId();
+  const unknown = await create(body({ userId: String(unknownId), startDate: '2026-10-02', endDate: '2026-12-24' }));
+  assert.equal(unknown.status, 404, JSON.stringify(unknown.body));
+  assert.equal(await lockOf(unknownId), null);
+  // A real member's dated enrollment takes their one lock document.
+  assert.equal((await create(body({ startDate: '2026-10-02', endDate: '2026-12-24' }))).status, 201);
+  assert.ok(await lockOf(member._id));
+});
+
+test('admin rows: isCurrent follows the plan-access rule - not a plan dated ahead without a coach Start', async () => {
+  const listed = async () => (await server.request('GET', `/api/admin/enrolled-clients?userId=${member._id}`, { token: adminToken })).body.data.enrolledClients[0];
+  // The list reads the real clock: dates far from any real today.
+  const ahead = await create(body({ startDate: '2030-01-01', endDate: '2030-03-25' }));
+  assert.equal(ahead.status, 201);
+  let row = await listed();
+  assert.deepEqual([row.status, row.isCurrent], ['active', false], 'the legacy status says active; it is not current');
+  await EnrolledClient.updateOne({ _id: ahead.body.data.enrolledClient.id }, { $set: { startDate: new Date(istDay('2020-01-01')) } });
+  row = await listed();
+  assert.equal(row.isCurrent, true, 'within its days');
+  await EnrolledClient.updateOne({ _id: ahead.body.data.enrolledClient.id }, { $set: { endDate: new Date(istDay('2020-03-24')) } });
+  assert.equal((await listed()).isCurrent, false, 'expired');
 });

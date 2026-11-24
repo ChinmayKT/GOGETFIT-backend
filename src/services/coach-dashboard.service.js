@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 import Coach from '../models/coach.model.js';
-import EnrolledClient, { enrollmentLifecycle, enrollmentStatus, notEndedCutoff } from '../models/enrolled-client.model.js';
+import EnrolledClient, { currentEnrollmentOf, enrollmentLifecycle, enrollmentStatus, notEndedCutoff } from '../models/enrolled-client.model.js';
 import { GROUP_BY_USER_STAGES, LOOKUP_STAGES, buildMatch, currentFirstStages, escapeRegex } from './enrolled-client.service.js';
 import { ERROR_CODES, notFound } from '../utils/errors.js';
 import { getCoachCapacity } from './coach-capacity.service.js';
@@ -268,8 +268,10 @@ export const getClientsForCoachUser = async (userId, params = {}, now = new Date
  * member has with other coaches are never included.
  *
  * Each entry has the same shape as a Clients row (so the app can open any
- * cycle in Client Details), plus its coach and `isCurrent` (true only for the
- * first entry, and only when it is active).
+ * cycle in Client Details), plus its coach and `isCurrent`: the member's
+ * current enrollment by the plan-access rule (currentEnrollmentOf - a plan
+ * the coach started and that has not expired), never by dates alone. It
+ * leads the list; a bought plan not started is never current.
  *
  * Returns null when the user has no coach profile; 404 when the member has no
  * enrollment with this coach (or the id is not a valid id).
@@ -296,12 +298,14 @@ export const getClientEnrollmentsForCoachUser = async (userId, clientUserId, now
   ]);
   if (docs.length === 0) throw notFoundError;
 
-  const enrollments = docs.map((doc, index) => {
+  const current = currentEnrollmentOf(docs, now);
+  const ordered = current ? [current, ...docs.filter((d) => d !== current)] : docs;
+  const enrollments = ordered.map((doc) => {
     const row = toWorkspaceClientRow(doc, now);
     return {
       ...row,
       coach: doc.coach ? { id: String(doc.coach._id), name: doc.coach.user?.profile?.name ?? null } : null,
-      isCurrent: index === 0 && row.status === 'active',
+      isCurrent: doc === current,
     };
   });
   return { client: enrollments[0].client, enrollments };

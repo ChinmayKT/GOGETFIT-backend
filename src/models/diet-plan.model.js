@@ -212,10 +212,13 @@ dietPlanSchema.index(
  * The plan a client sees on [day] (a Date at the start of the business day):
  * the newest assignment covering it. `planId` breaks a tie on assignedAt
  * deterministically - never _id, insertion order or updatedAt.
+ * [skipEnrollmentIds]: plans of these enrollments are passed over (the
+ * member's plans the coach has not started - unstartedEnrollmentIds).
  */
-dietPlanSchema.statics.findForDay = function findForDay(clientId, day) {
+dietPlanSchema.statics.findForDay = function findForDay(clientId, day, { skipEnrollmentIds = [] } = {}) {
   return this.findOne({
     clientId,
+    ...(skipEnrollmentIds.length ? { enrollmentId: { $nin: skipEnrollmentIds } } : {}),
     status: 'active',
     fromDate: { $lte: day },
     toDate: { $gte: day },

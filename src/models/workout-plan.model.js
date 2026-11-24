@@ -188,9 +188,12 @@ workoutPlanSchema.index(
  * active plan with that exact day selected; where several have it, the
  * newest assignedAt (then the higher legacy id, then the newer document) -
  * so a plan never shows on a day it was not given.
+ * [skipEnrollmentIds]: plans of these enrollments are passed over (the
+ * member's plans the coach has not started - unstartedEnrollmentIds).
  */
-workoutPlanSchema.statics.findForDay = function findForDay(clientId, day) {
-  return this.findOne({ clientId, status: 'active', selectedDates: day }).sort({
+workoutPlanSchema.statics.findForDay = function findForDay(clientId, day, { skipEnrollmentIds = [] } = {}) {
+  const skip = skipEnrollmentIds.length ? { enrollmentId: { $nin: skipEnrollmentIds } } : {};
+  return this.findOne({ clientId, status: 'active', selectedDates: day, ...skip }).sort({
     assignedAt: -1,
     'legacy.workoutPlanId': -1,
     _id: -1,

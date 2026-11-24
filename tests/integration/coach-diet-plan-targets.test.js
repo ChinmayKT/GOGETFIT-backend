@@ -174,19 +174,27 @@ test('the member sees the coach\'s targets only during an active plan; the coach
   await setLifecycle({ hasStarted: false, startDate: null, endDate: null });
   assert.equal((await put(enrollment._id, doc._id, COACH)).status, 200, 'the coach sets it before Start');
   assert.deepEqual((await coachDay()).body.data.dietPlan.coachGivenTargets, COACH, 'the coach reads it before Start');
+  // The member sees nothing of a plan the coach has not started - not its
+  // targets, not the plan itself (one plan at a time: a bought plan is not
+  // the member's plan until its Start).
+  assert.equal((await memberDay()).body.data.dietPlan, null, 'not started');
+  // Not through another day either.
+  const future = await server.request('GET', `/api/users/me/diet-plan?date=${addCalendarDays(today(), 2)}`, { token: tokenFor(chethan) });
+  assert.equal(future.body.data.dietPlan, null, 'a later day asked for while not started');
+
+  // 2a. Dated ahead without a coach Start (an admin enrollment): still hidden.
+  await setLifecycle({ hasStarted: true, startDate: day(addCalendarDays(today(), 1)), endDate: day(addCalendarDays(today(), 84)) });
   const notStarted = (await memberDay()).body.data.dietPlan;
-  assert.deepEqual(restricted(notStarted), hidden, 'not started');
+  assert.deepEqual(restricted(notStarted), hidden, 'scheduled without a coach Start');
   assert.deepEqual(notStarted.dietPlanTargets, ORIGINAL, 'the plan itself is unchanged');
   assert.equal(notStarted.bmr, 1500);
   assert.equal(notStarted.tdee, 2100);
-  // Not through another day either.
-  const future = await server.request('GET', `/api/users/me/diet-plan?date=${addCalendarDays(today(), 2)}`, { token: tokenFor(chethan) });
-  assert.deepEqual(restricted(future.body.data.dietPlan), hidden, 'a later day asked for while not active');
-
-  // 2. Start clicked - first day tomorrow (scheduled).
-  await setLifecycle({ hasStarted: true, startDate: day(addCalendarDays(today(), 1)), endDate: day(addCalendarDays(today(), 84)) });
-  assert.deepEqual(restricted((await memberDay()).body.data.dietPlan), hidden, 'scheduled');
   assert.deepEqual((await coachDay()).body.data.dietPlan.coachGivenTargets, COACH, 'the coach still reads it');
+
+  // 2b. Coach clicked Start - first official day tomorrow: unlocked at once.
+  await setLifecycle({ startedAt: new Date() });
+  assert.deepEqual((await memberDay()).body.data.dietPlan.coachGivenTargets, COACH, 'started, first day tomorrow');
+  await setLifecycle({ startedAt: null });
 
   // 3. Its first IST day.
   await setLifecycle({ startDate: day(today()), endDate: day(addCalendarDays(today(), 83)) });

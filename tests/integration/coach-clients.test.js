@@ -60,6 +60,10 @@ const enroll = async (coach, kind, { member, planDoc } = {}) => {
     pending: { hasStarted: false, startDate: null, endDate: null },
     ended: { hasStarted: true, startDate: new Date(now - 100 * DAY), endDate: new Date(now - 1 * DAY) },
     deleted: { hasStarted: true, startDate: new Date(now - 10 * DAY), endDate: new Date(now + 30 * DAY), isDeleted: true },
+    // Dated ahead by an admin, no coach Start (no startedAt).
+    futureUnstarted: { hasStarted: true, startDate: new Date(now + 5 * DAY), endDate: new Date(now + 90 * DAY) },
+    // The coach clicked Start just now: Day 1 tomorrow, access already open.
+    coachStarted: { hasStarted: true, startedAt: new Date(now - 60_000), startDate: new Date(now + DAY), endDate: new Date(now + 85 * DAY) },
   };
   const doc = await EnrolledClient.create({
     userId: client._id,
@@ -508,4 +512,45 @@ test('reading the list and the history modifies no enrollment', async () => {
 
   const after = await EnrolledClient.find().sort({ _id: 1 }).lean();
   assert.deepEqual(after, before);
+});
+
+// --- CURRENT follows the plan-access rule, never dates alone ---------------------------
+
+const currentFlags = async (member) =>
+  Object.fromEntries((await history(member._id)).body.data.enrollments.map((e) => [e.enrollmentId, e.isCurrent]));
+
+test('a future-dated enrollment without a coach Start is never CURRENT', async () => {
+  const member = await seedUser();
+  const future = await enroll(coachA, 'futureUnstarted', { member });
+  assert.deepEqual(await currentFlags(member), { [String(future.enrollment._id)]: false });
+});
+
+test('a coach-started plan is CURRENT - from the Start click (Day 1 tomorrow) and on its official days', async () => {
+  const member = await seedUser();
+  const started = await enroll(coachA, 'coachStarted', { member });
+  assert.deepEqual(await currentFlags(member), { [String(started.enrollment._id)]: true });
+  const other = await seedUser();
+  const active = await enroll(coachA, 'active', { member: other });
+  assert.deepEqual(await currentFlags(other), { [String(active.enrollment._id)]: true });
+});
+
+test('an expired plan is not CURRENT', async () => {
+  const member = await seedUser();
+  const ended = await enroll(coachA, 'ended', { member });
+  assert.deepEqual(await currentFlags(member), { [String(ended.enrollment._id)]: false });
+});
+
+test('newer purchases (unstarted, or dated ahead without a Start) never replace the active plan as CURRENT; it leads the list', async () => {
+  const member = await seedUser();
+  // enroll() dates each call a day earlier: the purchases below are newer than the active plan.
+  const bought = await enroll(coachA, 'pending', { member });
+  const future = await enroll(coachA, 'futureUnstarted', { member });
+  const active = await enroll(coachA, 'active', { member });
+  const { enrollments } = (await history(member._id)).body.data;
+  assert.equal(enrollments[0].enrollmentId, String(active.enrollment._id));
+  assert.deepEqual(await currentFlags(member), {
+    [String(active.enrollment._id)]: true,
+    [String(future.enrollment._id)]: false,
+    [String(bought.enrollment._id)]: false,
+  });
 });

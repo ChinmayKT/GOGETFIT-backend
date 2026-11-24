@@ -47,8 +47,22 @@ const seedCoach = async () => {
   const user = await seedUser(['user', 'coach']);
   return { user, coach: await Coach.create({ userId: user._id, profile: { level: 'LEVEL 1' }, status: 'active' }) };
 };
+// A plan the coach started today (Day 1 tomorrow): Weekly Update needs a
+// coach-started plan; a bought one alone is refused (see below).
+const istMidnight = (day) => new Date(`${day}T00:00:00+05:30`);
 const enroll = (user, coach, extra = {}) =>
-  EnrolledClient.create({ userId: user._id, planId: plan._id, coachId: coach._id, enrollDate: new Date('2026-09-01'), hasStarted: false, isDeleted: false, ...extra });
+  EnrolledClient.create({
+    userId: user._id,
+    planId: plan._id,
+    coachId: coach._id,
+    enrollDate: new Date('2026-09-01'),
+    hasStarted: true,
+    startedAt: new Date(),
+    startDate: istMidnight(addCalendarDays(today(), 1)),
+    endDate: istMidnight(addCalendarDays(today(), 84)),
+    isDeleted: false,
+    ...extra,
+  });
 
 const jpeg = (fill = 0x01) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, fill)]);
 const mp4 = () => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(64, 0x05)]);
@@ -131,7 +145,7 @@ test('photos, then the nine measurements: one submitted record, owners and profi
   assert.equal(doc.profileSnapshot.heightCm, 189);
   assert.equal(typeof doc.profileSnapshot.age, 'number');
   assert.equal(typeof doc.measurements.weightKg, 'number');
-  assert.equal(doc.weekNumber, null, 'the plan has not started');
+  assert.equal(doc.weekNumber, null, 'Day 1 is tomorrow: no week yet');
   assert.ok(doc.submittedAt instanceof Date);
 });
 
@@ -399,4 +413,22 @@ test('gzip: JSON is compressed when asked for; photos and video are not', async 
   const as = (type) => compression.filter({ headers: {} }, { getHeader: () => type });
   for (const type of ['image/jpeg', 'image/png', 'image/webp', 'video/mp4']) assert.equal(as(type), false, type);
   assert.equal(as('application/json; charset=utf-8'), true);
+});
+
+test('before any coach Start a Weekly Update is refused (403); after a plan ends it still goes to that plan, never to a newer unstarted purchase', async () => {
+  await enroll(member, coachA, { hasStarted: false, startedAt: null, startDate: null, endDate: null });
+  const refused = await upload('front', jpeg());
+  assert.equal(refused.status, 403, JSON.stringify(refused.body));
+  assert.equal(refused.body.error.code, 'INTAKE_PLAN_NOT_ACTIVE');
+  assert.equal(await WeeklyUpdate.countDocuments(), 0);
+
+  const ended = await enroll(member, coachA, {
+    enrollDate: new Date('2026-06-01'),
+    startDate: istMidnight(addCalendarDays(today(), -90)),
+    endDate: istMidnight(addCalendarDays(today(), -7)),
+  });
+  await photos();
+  assert.equal((await submit(valid())).status, 201);
+  const doc = await WeeklyUpdate.findOne({ clientId: member._id }).lean();
+  assert.equal(String(doc.enrollmentId), String(ended._id));
 });

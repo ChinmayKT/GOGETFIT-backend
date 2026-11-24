@@ -10,7 +10,7 @@ import { ERROR_CODES, badRequest, conflict, notFound, tooManyRequests } from '..
 import { assertValidImage } from '../utils/image.js';
 import { clientOfCoachEnrollment, contributed, effectiveTargetsOf } from './diet-plan.service.js';
 import { toFoodRow } from './food.service.js';
-import { planAccessOf, planNotActive, requireActivePlan } from './plan-lifecycle.service.js';
+import { planAccessOf, planNotActive, requireActivePlan, unstartedEnrollmentIds } from './plan-lifecycle.service.js';
 import { foodLogMealImageFolder, getStorage } from './storage/index.js';
 
 /**
@@ -163,7 +163,9 @@ export const uploadFoodLogMealImage = async (userId, meal, buffer, { now = new D
  * one authorizing the submission ([enrollment], requireActivePlan's).
  */
 const resolveDaySnapshot = async (clientId, logDate, memberGoal, enrollment) => {
-  const plan = await DietPlan.findForDay(clientId, startOfBusinessDay(logDate)).lean();
+  const plan = await DietPlan.findForDay(clientId, startOfBusinessDay(logDate), {
+    skipEnrollmentIds: await unstartedEnrollmentIds(clientId),
+  }).lean();
   let targets = null;
   let targetsSource = null;
   if (plan) {
@@ -193,6 +195,10 @@ export const getFoodLogForDay = async (userId, { date, now = new Date() } = {}) 
   const day = date ?? today;
   if (!isCalendarDay(day)) throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'date must be a valid YYYY-MM-DD day');
   const user = await findUser(userId);
+  // Another day's log is Food Intake History - an active-plan feature, as
+  // the history list is (403 INTAKE_PLAN_NOT_ACTIVE). Today stays readable:
+  // it carries what Intake may offer (planAccess), plan or not.
+  if (day !== today) await requireActivePlan(user._id, now);
   const [doc, { access }] = await Promise.all([
     FoodLog.findOne({ clientId: user._id, logDate: day }).lean(),
     planAccessOf(user._id, now),

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 import logger from '../config/logger.js';
 import DailyUpdate from '../models/daily-update.model.js';
-import EnrolledClient, { enrollmentLifecycle, enrollmentStatus } from '../models/enrolled-client.model.js';
+import EnrolledClient, { currentEnrollmentOf, enrollmentLifecycle, enrollmentStatus } from '../models/enrolled-client.model.js';
 import GoGetFitCoins from '../models/gogetfit-coins.model.js';
 import Streak from '../models/streak.model.js';
 import { businessDayOf } from '../utils/business-date.js';
@@ -65,7 +65,9 @@ const currentPlanDays = async (userId, now) => {
     .sort({ enrollDate: -1, createdAt: -1, _id: -1 })
     .populate({ path: 'planId', select: 'durationWeeks' })
     .lean();
-  const doc = docs.find((d) => ['active', 'not_started'].includes(enrollmentStatus(d, now)));
+  // The current plan first (currentEnrollmentOf) - never a plan bought during
+  // it - else, as before, the newest one neither deleted nor ended.
+  const doc = currentEnrollmentOf(docs, now) ?? docs.find((d) => ['active', 'not_started'].includes(enrollmentStatus(d, now)));
   const weeks = doc?.planId?.durationWeeks;
   return Number.isFinite(weeks) && weeks > 0 ? weeks * 7 : null;
 };

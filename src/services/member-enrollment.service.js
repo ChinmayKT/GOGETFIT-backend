@@ -1,4 +1,4 @@
-import EnrolledClient, { enrollmentStatus } from '../models/enrolled-client.model.js';
+import EnrolledClient, { currentEnrollmentOf, enrollmentStatus } from '../models/enrolled-client.model.js';
 import { PLAN_CURRENCY } from '../models/gogetfit-plan.model.js';
 import { toMemberCoach } from './coach.service.js';
 import { toMemberPlan } from './gogetfit-plan.service.js';
@@ -70,17 +70,18 @@ export const listMemberEnrollments = async (userId, now = new Date()) => {
     .lean();
 
   const enrollments = docs.map((doc) => toMemberEnrollment(doc, now));
+  const currentDoc = currentEnrollmentOf(docs, now);
 
   return {
     enrollments,
     total: enrollments.length,
     /**
-     * The one the app treats as "my current plan", by the same rule the rest of
-     * the system uses: `active` means started and not past its end date. A
-     * member with two running cycles gets the most recently bought one, which
-     * is also the order the list is in.
+     * The one the app treats as "my current plan" - the same pick as the plan
+     * access (currentEnrollmentOf): the plan the coach started and that has
+     * not expired. Never the newest purchase as such: a plan bought during
+     * another, or after it, is not current until the coach starts it.
      */
-    current: enrollments.find((e) => e.status === 'active') ?? null,
+    current: currentDoc ? enrollments[docs.indexOf(currentDoc)] : null,
   };
 };
 

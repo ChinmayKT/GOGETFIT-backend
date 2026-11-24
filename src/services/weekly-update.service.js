@@ -13,7 +13,7 @@ import EnrolledClient from '../models/enrolled-client.model.js';
 import User from '../models/user.model.js';
 import WeeklyUpdate from '../models/weekly-update.model.js';
 import { businessDayOf } from '../utils/business-date.js';
-import { ERROR_CODES, AppError, badRequest, notFound } from '../utils/errors.js';
+import { ERROR_CODES, AppError, badRequest, forbidden, notFound } from '../utils/errors.js';
 import { assertValidImage } from '../utils/image.js';
 import { assertValidVideo } from '../utils/video.js';
 import {
@@ -80,12 +80,18 @@ const dayClosed = (today) =>
 const isDuplicateKey = (error) => error?.code === 11000;
 
 /**
- * The enrollment a Weekly Update belongs to: the member's active one, else
- * their latest purchase (the rule the questionnaire and Body Metrics use).
+ * The enrollment a Weekly Update belongs to: the member's current one
+ * (currentEnrollmentOf), else their latest plan the coach started (an ended
+ * one). A plan bought during or after a started one never takes it from that
+ * one. Before any coach Start there is none: 403 INTAKE_PLAN_NOT_ACTIVE - the
+ * app's Journey keeps Weekly Update closed until the coach starts the plan.
  */
 const enrollmentFor = async (userId, now) => {
   const { current, enrollments } = await listMemberEnrollments(userId, now);
-  const chosen = current ?? enrollments[0] ?? null;
+  const chosen = current ?? enrollments.find((e) => e.hasStarted) ?? null;
+  if (!chosen && enrollments.length) {
+    throw forbidden(ERROR_CODES.INTAKE_PLAN_NOT_ACTIVE, 'Weekly Update opens once your coach starts your plan.');
+  }
   if (!chosen) throw notFound(ERROR_CODES.ENROLLED_CLIENT_NOT_FOUND, 'You have no plan to send a Weekly Update for');
   const doc = await EnrolledClient.findOne(
     { _id: chosen.id, userId, isDeleted: { $ne: true } },

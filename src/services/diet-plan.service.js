@@ -13,7 +13,7 @@ import { ERROR_CODES, badRequest, forbidden, notFound } from '../utils/errors.js
 import { toFoodRow } from './food.service.js';
 import { ACTOR_ADMIN, ACTOR_COACH, resolveEnrollmentForActor } from './diet-plan-create-data.service.js';
 import { round2 } from '../utils/fitness-calculations.js';
-import { planAccessOf } from './plan-lifecycle.service.js';
+import { planAccessOf, unstartedEnrollmentIds } from './plan-lifecycle.service.js';
 
 /**
  * Coach-assigned diet plans, read-only. See docs/diet-plans-design.md.
@@ -257,12 +257,16 @@ export const getDietPlanForDay = async (userId, { date, today = businessDayOf(ne
   if (!isCalendarDay(day)) throw badRequest(ERROR_CODES.VALIDATION_ERROR, 'date must be a valid YYYY-MM-DD day');
   const user = await findUser(userId);
 
-  const doc = await DietPlan.findForDay(user._id, startOfBusinessDay(day)).populate(POPULATE).lean();
+  // The member's own view passes over plans of enrollments not started yet;
+  // the coach's view is unchanged.
+  const skipEnrollmentIds = coachView ? [] : await unstartedEnrollmentIds(user._id);
+  const doc = await DietPlan.findForDay(user._id, startOfBusinessDay(day), { skipEnrollmentIds }).populate(POPULATE).lean();
   const { views, missing } = await toViews(doc ? [doc] : [], today, userId);
   const view = views[0] ?? null;
   // The coach's Set Calorie Intake is the member's only during an active plan
-  // (planAccessOf, decided now - whatever day is asked for): not before the
-  // coach's Start, not while it is scheduled for tomorrow, not after it ends.
+  // (planAccessOf, decided now - whatever day is asked for): from the coach's
+  // Start (even with the first official day tomorrow), never before it or
+  // after the plan ends.
   // The plan itself (foods, totals, bmr, tdee) is unchanged. The coach always
   // sees them (coachView).
   if (view && !coachView && !(await planAccessOf(user._id, now)).access.planActive) {
@@ -303,10 +307,17 @@ const mergeContiguous = (spans) => {
  */
 export const getDietPlanHistoryForUser = async (userId, { today = businessDayOf(new Date()), includeCurrent = false } = {}) => {
   const user = await findUser(userId);
-  const docs = await DietPlan.find({ clientId: user._id, status: 'active' })
-    .select('-meals')
-    .populate(POPULATE[0])
-    .lean();
+  const [all, unstartedIds] = await Promise.all([
+    DietPlan.find({ clientId: user._id, status: 'active' }).select('-meals').populate(POPULATE[0]).lean(),
+    unstartedEnrollmentIds(user._id),
+  ]);
+  // Plans of enrollments the coach has not started were never the member's
+  // (getDietPlanForDay passes over them): left out of the member's History
+  // and of what the member saw (shown). The coach still lists them - they
+  // assign them before Start - with nothing shown yet.
+  const unstarted = new Set(unstartedIds.map(String));
+  const notStarted = (d) => Boolean(d.enrollmentId) && unstarted.has(String(d.enrollmentId));
+  const docs = includeCurrent ? all : all.filter((d) => !notStarted(d));
 
   // One run per contiguous stretch: a plan with picked days is one run per
   // stretch of them, so its gaps stay gaps here exactly as in the day lookup.
@@ -323,7 +334,7 @@ export const getDietPlanHistoryForUser = async (userId, { today = businessDayOf(
     return stretches;
   });
   // What the member saw on each day, by the same rule as the day lookup.
-  const schedule = buildSchedule(runs);
+  const schedule = buildSchedule(runs.filter((r) => !notStarted(r.doc)));
 
   const groups = new Map();
   for (const r of runs) groups.set(r.planId, [...(groups.get(r.planId) ?? []), r]);

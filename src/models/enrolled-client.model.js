@@ -287,6 +287,30 @@ export const enrollmentLifecycle = (doc, now = new Date()) => {
 };
 
 /**
+ * Whether the enrollment unlocks the member's plan features at [now]: during
+ * its official days (active), and already from the instant the coach clicked
+ * Start (startedAt) while its first official day is still ahead (scheduled).
+ * The official dates are untouched - only access starts early. A scheduled
+ * row without a coach Start (e.g. an admin enrollment dated ahead) waits for
+ * its first day, as before.
+ */
+export const unlocksPlan = (doc, now = new Date()) => {
+  const lifecycle = enrollmentLifecycle(doc, now);
+  if (lifecycle === 'active') return true;
+  return lifecycle === 'scheduled' && Boolean(doc.startedAt) && new Date(doc.startedAt) <= now;
+};
+
+/**
+ * THE member's current enrollment among [docs] (theirs, any order): the
+ * officially active one, else one the coach has started whose first day is
+ * tomorrow (unlocksPlan), else null. Never the newest purchase as such - a
+ * bought plan the coach has not started is never current. planAccessOf and
+ * the member's enrollment list both pick with this.
+ */
+export const currentEnrollmentOf = (docs, now = new Date()) =>
+  docs.find((d) => enrollmentLifecycle(d, now) === 'active') ?? docs.find((d) => unlocksPlan(d, now)) ?? null;
+
+/**
  * The query form of "its last day is not over yet": endDate (the instant its
  * last day begins) on or after the instant today begins.
  */

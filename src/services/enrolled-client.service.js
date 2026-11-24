@@ -2,14 +2,16 @@ import mongoose from 'mongoose';
 
 import Coach from '../models/coach.model.js';
 import Coupon from '../models/coupon.model.js';
-import EnrolledClient, { ENROLLMENT_SOURCE_ADMIN_MANUAL, enrollmentStatus, notEndedCutoff } from '../models/enrolled-client.model.js';
+import EnrolledClient, { ENROLLMENT_SOURCE_ADMIN_MANUAL, enrollmentStatus, notEndedCutoff, unlocksPlan } from '../models/enrolled-client.model.js';
 import GogetfitPlan from '../models/gogetfit-plan.model.js';
 import { ROLE_CLIENT, mergeRoles } from '../constants/roles.js';
 import User from '../models/user.model.js';
 import { now as clockNow } from '../utils/clock.js';
 import { getCouponStatus } from '../utils/coupon-status.js';
 import { ERROR_CODES, badRequest, notFound } from '../utils/errors.js';
+import { businessDayOf } from '../utils/business-date.js';
 import { consumeSlot, prepareBooking } from './coach-capacity.service.js';
+import { assertNoOverlappingPlan, ensureMemberLock, lockMemberPlans } from './plan-lifecycle.service.js';
 
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_PAGE_SIZE = 25;
@@ -114,6 +116,13 @@ export const LOOKUP_STAGES = [
 export const toListRow = (doc, now = new Date()) => ({
   id: String(doc._id),
   status: enrollmentStatus(doc, now),
+  /**
+   * The member's current plan by the plan-access rule (unlocksPlan: started
+   * by the coach and not expired, or within its official days) - not the
+   * legacy status, which also calls a plan dated ahead without a Start
+   * "active". One per member at most (one plan at a time).
+   */
+  isCurrent: unlocksPlan(doc, now),
   client: doc.user
     ? {
         id: String(doc.user._id),
@@ -379,6 +388,15 @@ export const priceAfterCoupon = (basePrice, discountPercent = 0) => {
 export const createManualEnrollment = async (input, adminId, at = clockNow()) => {
   // Uses this month's capacity whatever the enroll date, which stays as entered.
   await prepareBooking(input.coachId, at);
+  // A dated (started) enrollment takes the member's plan lock below - its
+  // document created only for a member that exists (admin-only route, body
+  // already validated), so a bad user id leaves nothing behind. The
+  // transaction re-reads the user and refuses one that is gone or inactive.
+  // ponytail: a lock for a real member stays if a later check (plan, coach,
+  // coupon, overlap) refuses - it is that member's, reused by their next start.
+  if (input.startDate && input.endDate && mongoose.isValidObjectId(input.userId) && (await User.exists({ _id: input.userId }))) {
+    await ensureMemberLock(input.userId);
+  }
 
   const session = await mongoose.startSession();
   let createdId;
@@ -414,6 +432,14 @@ export const createManualEnrollment = async (input, adminId, at = clockNow()) =>
         if (getCouponStatus(coupon.validFrom, coupon.validTo, at) !== 'active') {
           throw badRequest(ERROR_CODES.COUPON_INACTIVE, `Coupon ${coupon.code} is not active today`);
         }
+      }
+
+      // One plan at a time: a started enrollment (dated) may not meet the
+      // days of another started plan of the member - checked under the
+      // member's lock, so a concurrent coach Start cannot slip in between.
+      if (input.startDate && input.endDate) {
+        await lockMemberPlans(user._id, session);
+        await assertNoOverlappingPlan(user._id, businessDayOf(input.startDate), businessDayOf(input.endDate), session);
       }
 
       pricing = priceAfterCoupon(plan.pricing.basePrice, coupon?.discount?.value ?? 0);

@@ -52,6 +52,8 @@ export const ERROR_CODES = {
   PLAN_NOT_READY: 'PLAN_NOT_READY',
   PLAN_DURATION_MISSING: 'PLAN_DURATION_MISSING',
   PLAN_OVERLAP: 'PLAN_OVERLAP',
+  // Coach Start while another plan of the client has not expired yet.
+  ACTIVE_PLAN_EXISTS: 'ACTIVE_PLAN_EXISTS',
   // Daily Update: the member has used all of today's submissions.
   DAILY_UPDATE_DAILY_LIMIT_REACHED: 'DAILY_UPDATE_DAILY_LIMIT_REACHED',
   // A Daily Update can only be submitted for today; past days are read-only.
