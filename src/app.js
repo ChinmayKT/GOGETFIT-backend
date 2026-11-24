@@ -10,6 +10,7 @@ import { errorHandler, notFoundHandler } from './middleware/error.middleware.js'
 import { createCorsMiddleware, resolveAllowedOrigins } from './middleware/cors.middleware.js';
 
 const app = express();
+app.set('trust proxy', env.trustProxy);
 
 // Gzip for responses over 1 KB whose type compresses (JSON, text). Images and
 // video are already compressed and pass through untouched.

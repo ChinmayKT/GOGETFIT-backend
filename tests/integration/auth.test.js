@@ -11,6 +11,7 @@ import {
   connectTestDb,
   disconnectTestDb,
   login,
+  skipOtpCooldown,
   startTestServer,
 } from '../helpers/test-server.js';
 
@@ -192,6 +193,7 @@ test('requesting a new OTP invalidates the previous one', async () => {
   const first = await server.request('POST', '/api/auth/request-otp', {
     body: { phone: '9111111111' },
   });
+  await skipOtpCooldown('919111111111');
   await server.request('POST', '/api/auth/request-otp', { body: { phone: '9111111111' } });
 
   const response = await server.request('POST', '/api/auth/verify-otp', {

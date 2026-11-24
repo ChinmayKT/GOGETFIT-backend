@@ -10,7 +10,16 @@ export const LEGACY_SOURCE = 'gogetfit';
 const phoneSchema = new mongoose.Schema(
   {
     raw: { type: String, required: true, trim: true },
+    // Login identity: E.164 digits without "+" ("919876543210"). Unique (below).
     normalized: { type: String, required: true, trim: true },
+    // Derived from the validated number (utils/phone.js parsePhone), never
+    // from client text. Optional: absent on users not yet re-parsed, and
+    // never guessed for a legacy number that does not parse.
+    e164: { type: String, trim: true }, // always "+" + normalized
+    countryIso: { type: String, trim: true }, // "IN"
+    countryName: { type: String, trim: true }, // "India"
+    countryCode: { type: String, trim: true }, // "91"
+    formatted: { type: String, trim: true }, // "+91 98765 43210"
   },
   { _id: false },
 );

@@ -23,15 +23,11 @@ const hashesMatch = (a, b) => {
 };
 
 /**
- * Issues a challenge for a phone number. Any previously active challenge for
- * the same phone is invalidated so only the newest code can be used.
+ * Creates a challenge for a phone number, 'pending' until delivery: it cannot
+ * be verified, and earlier codes stay usable, until [activateOtp] records
+ * that the provider took it. [discardOtp] removes it when delivery failed.
  */
 export const issueOtp = async (phoneNormalized, now = new Date()) => {
-  await Otp.updateMany(
-    { phoneNormalized, consumedAt: null },
-    { $set: { consumedAt: now } },
-  );
-
   const code = generateOtpCode();
   const salt = crypto.randomBytes(16).toString('hex');
   const expiresAt = new Date(now.getTime() + env.otp.ttlSeconds * 1000);
@@ -41,17 +37,41 @@ export const issueOtp = async (phoneNormalized, now = new Date()) => {
     codeHash: hashOtpCode(code, salt),
     salt,
     expiresAt,
+    deliveryStatus: 'pending',
   });
 
   return { record, code, expiresAt };
 };
 
 /**
+ * Makes a delivered (or possibly delivered) code the phone's only active one:
+ * every earlier challenge is invalidated.
+ */
+export const activateOtp = async (record, { status, channel = null, messageId = null }, now = new Date()) => {
+  await Otp.updateOne(
+    { _id: record._id },
+    { $set: { deliveryStatus: status, channel, providerMessageId: messageId } },
+  );
+  await Otp.updateMany(
+    { phoneNormalized: record.phoneNormalized, consumedAt: null, _id: { $ne: record._id } },
+    { $set: { consumedAt: now } },
+  );
+};
+
+/** A code the provider never accepted: gone, as if never issued. */
+export const discardOtp = (record) => Otp.deleteOne({ _id: record._id });
+
+/**
  * Verifies and atomically consumes a challenge. Single use: a consumed record
  * can never verify again, and a wrong code burns an attempt.
  */
 export const verifyOtp = async (phoneNormalized, code, now = new Date()) => {
-  const record = await Otp.findOne({ phoneNormalized, consumedAt: null }).sort({ createdAt: -1 });
+  // A 'pending' code was never delivered, so it is never the one checked.
+  const record = await Otp.findOne({
+    phoneNormalized,
+    consumedAt: null,
+    deliveryStatus: { $ne: 'pending' },
+  }).sort({ createdAt: -1 });
 
   if (!record) {
     throw badRequest(ERROR_CODES.OTP_NOT_FOUND, 'No active OTP for this phone number');

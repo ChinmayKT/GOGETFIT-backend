@@ -2,7 +2,7 @@ import { ROLES } from '../constants/roles.js';
 import { calculateAge, parseDateOfBirth } from '../utils/age.js';
 import { ERROR_CODES, badRequest } from '../utils/errors.js';
 import { ACTIVITY_LEVELS, FITNESS_GOALS, FOOD_TYPES, GENDERS } from '../utils/fitness-calculations.js';
-import { normalizePhone } from '../utils/phone.js';
+import { buildPhoneField } from '../utils/phone.js';
 
 export const validateAdminLogin = (body = {}) => {
   if (typeof body.email !== 'string' || body.email.trim() === '') {
@@ -174,10 +174,10 @@ const assertBody = (body, allowed) => {
 
 export const validateCreateUser = (body = {}, now = new Date()) => {
   assertBody(body, CREATE_USER_FIELDS);
-  // Phone: the login identity. normalizePhone throws PhoneNormalizationError -> 400 INVALID_PHONE.
+  // Phone: the login identity, validated and stored with its country details.
+  // An invalid number throws PhoneNormalizationError -> 400 INVALID_PHONE.
   if (typeof body.phone !== 'string' || body.phone.trim() === '') createFail('phone is required');
-  const normalized = normalizePhone(body.phone);
-  return { phone: { raw: body.phone.trim(), normalized }, ...validateProfileBody(body, now, { edit: false }) };
+  return { phone: buildPhoneField(body.phone), ...validateProfileBody(body, now, { edit: false }) };
 };
 
 /**

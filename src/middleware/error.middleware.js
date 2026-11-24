@@ -66,6 +66,10 @@ export const errorHandler = (error, req, res, next) => {
     logger.warn(`${req.method} ${req.originalUrl} -> ${statusCode} ${code}`);
   }
 
+  if (statusCode === 429 && details?.retryAfterSeconds) {
+    res.set('Retry-After', String(details.retryAfterSeconds));
+  }
+
   const body = { success: false, error: { code, message } };
   if (details !== undefined) body.error.details = details;
   // Stack traces are never exposed outside development.

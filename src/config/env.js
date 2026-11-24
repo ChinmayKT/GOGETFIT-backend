@@ -32,7 +32,24 @@ export const env = {
     ttlSeconds: int(process.env.OTP_TTL_SECONDS, 300),
     maxAttempts: int(process.env.OTP_MAX_ATTEMPTS, 5),
     debug: bool(process.env.OTP_DEBUG, false),
+    // Requests charged per phone per UTC calendar day.
+    dailyLimit: int(process.env.OTP_DAILY_LIMIT, 3),
+    resendCooldownSeconds: int(process.env.OTP_RESEND_COOLDOWN_SECONDS, 60),
+    ipHourlyLimit: int(process.env.OTP_IP_HOURLY_LIMIT, 20),
+    // 'log' (send nothing; development). Phase 3 adds the WhatsApp provider.
+    delivery: process.env.OTP_DELIVERY || 'log',
+    deliveryTimeoutMs: int(process.env.OTP_DELIVERY_TIMEOUT_MS, 10000),
   },
+
+  // Express 'trust proxy': set (e.g. 1) when the API sits behind a reverse
+  // proxy / load balancer, so req.ip is the client and not the proxy -
+  // otherwise every member shares one OTP IP limit.
+  trustProxy: (() => {
+    const v = process.env.TRUST_PROXY;
+    if (v === undefined || v === '' || v === 'false') return false;
+    if (v === 'true') return true;
+    return /^\d+$/.test(v) ? Number(v) : v;
+  })(),
 
   // The calendar day coupons (and other date-only rules) are judged in.
   businessTimezone: process.env.BUSINESS_TIMEZONE || 'Asia/Kolkata',
@@ -74,6 +91,8 @@ export const env = {
 
   phone: {
     defaultCountryCode: process.env.DEFAULT_COUNTRY_CODE || '91',
+    // The country a bare national number is read in (old app versions).
+    defaultCountryIso: process.env.DEFAULT_COUNTRY_ISO || 'IN',
     nationalNumberLength: int(process.env.NATIONAL_NUMBER_LENGTH, 10),
   },
 

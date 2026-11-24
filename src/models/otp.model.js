@@ -13,6 +13,11 @@ const otpSchema = new mongoose.Schema(
     expiresAt: { type: Date, required: true },
     consumedAt: { type: Date, default: null },
     attempts: { type: Number, default: 0 },
+    // pending: handed to the provider, not yet accepted (never verifiable);
+    // accepted / uncertain: verifiable. Absent on codes issued before this.
+    deliveryStatus: { type: String, enum: ['pending', 'accepted', 'uncertain'] },
+    channel: { type: String, default: null },
+    providerMessageId: { type: String, default: null },
   },
   { timestamps: true, versionKey: false },
 );

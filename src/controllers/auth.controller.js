@@ -3,14 +3,16 @@ import { validateRequestOtp, validateVerifyOtp } from '../validators/auth.valida
 
 export const postRequestOtp = async (req, res, next) => {
   try {
-    const { phone } = validateRequestOtp(req.body);
-    const result = await requestOtp(phone);
+    const { phone, countryIso } = validateRequestOtp(req.body);
+    const result = await requestOtp(phone, countryIso, { ip: req.ip });
 
     const body = {
       success: true,
       message: 'OTP sent',
       data: {
         phone: result.phone,
+        e164: result.e164,
+        formatted: result.formatted,
         isNewUser: result.isNewUser,
         expiresAt: result.expiresAt.toISOString(),
       },
@@ -26,8 +28,8 @@ export const postRequestOtp = async (req, res, next) => {
 
 export const postVerifyOtp = async (req, res, next) => {
   try {
-    const { phone, otp } = validateVerifyOtp(req.body);
-    const result = await verifyOtpAndLogin(phone, otp);
+    const { phone, otp, countryIso } = validateVerifyOtp(req.body);
+    const result = await verifyOtpAndLogin(phone, otp, countryIso);
 
     res.status(result.isNewUser ? 201 : 200).json({
       success: true,

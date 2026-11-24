@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import app from '../../src/app.js';
 import User from '../../src/models/user.model.js';
 import Otp from '../../src/models/otp.model.js';
+import OtpLimit from '../../src/models/otp-limit.model.js';
 import MigrationConflict from '../../src/models/migration-conflict.model.js';
 import FreeDietPlan from '../../src/models/free-diet-plan.model.js';
 import Coach from '../../src/models/coach.model.js';
@@ -57,6 +58,7 @@ export const connectTestDb = async () => {
   await Promise.all([
     User.syncIndexes(),
     Otp.syncIndexes(),
+    OtpLimit.syncIndexes(),
     MigrationConflict.syncIndexes(),
     FreeDietPlan.syncIndexes(),
     Coach.syncIndexes(),
@@ -87,6 +89,7 @@ export const clearTestDb = async () => {
   await Promise.all([
     User.deleteMany({}),
     Otp.deleteMany({}),
+    OtpLimit.deleteMany({}),
     MigrationConflict.deleteMany({}),
     FreeDietPlan.deleteMany({}),
     Coach.deleteMany({}),
@@ -166,13 +169,23 @@ export const startTestServer = async () => {
       payload = text;
     }
 
-    return { status: response.status, body: payload };
+    return { status: response.status, body: payload, headers: Object.fromEntries(response.headers) };
   };
 
   const close = () => new Promise((resolve) => server.close(resolve));
 
   return { baseUrl, request, close };
 };
+
+/**
+ * Lets the next OTP request for [phoneNormalized] past the 60 s resend
+ * cooldown (as if the minute had gone by). The daily count is untouched.
+ */
+export const skipOtpCooldown = (phoneNormalized) =>
+  OtpLimit.updateOne(
+    { _id: `phone:${phoneNormalized}` },
+    { $set: { lastRequestAt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+  );
 
 /** Full login: request a code, read it from the debug response, verify it. */
 export const login = async (request, phone) => {

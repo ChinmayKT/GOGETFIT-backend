@@ -208,6 +208,40 @@ test('3c. the list can be filtered by role and by status, and searched', async (
   assert.equal(badRole.status, 400);
 });
 
+test('3d. international members: country fields in the list, and found by the number as it is shown', async () => {
+  await seedAdmin();
+  const intl = [
+    ['61412345678', 'AU', 'Australia', '61', '+61 412 345 678', 'Ava AU'],
+    ['447400123456', 'GB', 'United Kingdom', '44', '+44 7400 123456', 'Gus GB'],
+    ['14165550123', 'CA', 'Canada', '1', '+1 416 555 0123', 'Cal CA'],
+  ];
+  for (const [n, iso, name, code, formatted, who] of intl) {
+    await User.create({
+      phone: { raw: `+${n}`, normalized: n, e164: `+${n}`, countryIso: iso, countryName: name, countryCode: code, formatted },
+      profile: { name: who },
+      roles: ['user'],
+      status: 'active',
+    });
+  }
+  const { body: login } = await loginAdmin();
+  const token = login.data.token;
+  const find = async (term) =>
+    (await server.request('GET', `/api/admin/users?search=${encodeURIComponent(term)}`, { token })).body.data.users;
+
+  const [au] = await find('+61 412 345');
+  assert.equal(au.profile.name, 'Ava AU');
+  assert.deepEqual(
+    { iso: au.phone.countryIso, name: au.phone.countryName, code: au.phone.countryCode, f: au.phone.formatted, n: au.phone.normalized },
+    { iso: 'AU', name: 'Australia', code: '61', f: '+61 412 345 678', n: '61412345678' },
+  );
+  assert.equal((await find('+44 7400 123456'))[0].profile.name, 'Gus GB');
+  assert.equal((await find('447400123456'))[0].profile.name, 'Gus GB');
+  assert.equal((await find('416 555'))[0].profile.name, 'Cal CA');
+  // An older record with no country fields reads as null, never guessed.
+  const [legacy] = await find('Prajwal');
+  assert.equal(legacy.phone.countryName, null);
+});
+
 // --- 4. Admin can view user details ---------------------------------------
 
 test('4. an admin can read a single user, with the nested profile shape', async () => {

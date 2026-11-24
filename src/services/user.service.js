@@ -8,10 +8,12 @@ export const findById = (id) => User.findById(id);
 
 /**
  * Creates a user that has no legacy origin. No legacy mapping is invented.
+ * [phone] is the full subdocument (raw, normalized and, when parsed, e164,
+ * countryIso, countryName, countryCode, formatted).
  */
-export const createNewUser = ({ raw, normalized }) =>
+export const createNewUser = (phone) =>
   User.create({
-    phone: { raw, normalized },
+    phone,
     profile: {
       name: null,
       dateOfBirth: null,
@@ -39,6 +41,54 @@ export const createNewUser = ({ raw, normalized }) =>
     status: 'active',
   });
 
+const isDuplicatePhone = (error) =>
+  error?.code === 11000 &&
+  (error.keyPattern?.['phone.normalized'] !== undefined ||
+    String(error.message).includes('uniq_phone_normalized'));
+
+/**
+ * First login: create the account, or - when a concurrent request created it
+ * a moment earlier (unique index violation) - return that one. One phone is
+ * always one account; nothing is merged.
+ */
+export const createOrFindUser = async (phone) => {
+  try {
+    return { user: await createNewUser(phone), created: true };
+  } catch (error) {
+    if (!isDuplicatePhone(error)) throw error;
+    const user = await findByNormalizedPhone(phone.normalized);
+    if (!user) throw error;
+    return { user, created: false };
+  }
+};
+
+const PHONE_DETAIL_FIELDS = ['e164', 'countryIso', 'countryName', 'countryCode', 'formatted'];
+
+/**
+ * Stores the parsed phone details on an existing account that lacks them.
+ * Only for the account's own number (same normalized identity), only the
+ * missing fields, and never touches normalized, raw or the _id.
+ */
+export const fillPhoneDetails = async (user, details) => {
+  if (!details || details.normalized !== user.phone?.normalized) return;
+  const set = {};
+  for (const field of PHONE_DETAIL_FIELDS) {
+    if (details[field] && !user.phone[field]) set[`phone.${field}`] = details[field];
+  }
+  if (Object.keys(set).length === 0) return;
+  await User.updateOne({ _id: user._id, 'phone.normalized': user.phone.normalized }, { $set: set });
+  for (const [path, value] of Object.entries(set)) user.phone[path.slice('phone.'.length)] = value;
+};
+
+/** The phone details for API responses; e164 is derivable for every user. */
+export const phoneDetailsOf = (phone) => ({
+  e164: phone?.e164 ?? (phone?.normalized ? `+${phone.normalized}` : null),
+  countryIso: phone?.countryIso ?? null,
+  countryName: phone?.countryName ?? null,
+  countryCode: phone?.countryCode ?? null,
+  formatted: phone?.formatted ?? null,
+});
+
 /**
  * DOB is authoritative, age is a cache. On every read the age is recalculated
  * and, if it drifted (the user had a birthday), the cached value is refreshed.
@@ -58,7 +108,9 @@ export const refreshAge = async (user, now = new Date()) => {
 /** Public shape returned to the Flutter client. Legacy data stays internal. */
 export const toPublicUser = (user, age) => ({
   id: String(user._id),
+  // Unchanged: digits with the country code, as every app version reads it.
   phone: user.phone.normalized,
+  phoneDetails: phoneDetailsOf(user.phone),
   profile: {
     name: user.profile?.name ?? null,
     dateOfBirth: user.profile?.dateOfBirth

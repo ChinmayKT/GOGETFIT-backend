@@ -7,6 +7,7 @@ import { conflict, ERROR_CODES, notFound } from '../utils/errors.js';
 import { deriveFitnessFigures } from '../utils/fitness-calculations.js';
 import { validateFitnessProfile } from '../validators/profile.validator.js';
 import { matchAndAttachPlan } from './free-diet-plan-match.service.js';
+import { phoneDetailsOf } from './user.service.js';
 
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_PAGE_SIZE = 25;
@@ -27,6 +28,7 @@ export const toAdminUser = (user, age) => ({
   phone: {
     raw: user.phone?.raw ?? null,
     normalized: user.phone?.normalized ?? null,
+    ...phoneDetailsOf(user.phone),
   },
   profile: {
     name: user.profile?.name ?? null,
@@ -90,11 +92,16 @@ export const buildUserFilter = ({ search, role, status } = {}) => {
   const term = String(search ?? '').trim();
   if (term !== '') {
     const rx = new RegExp(escapeRegex(term), 'i');
+    // A number typed the way the portal shows it ("+61 412 345") also finds
+    // the stored digits.
+    const digits = term.replace(/\D/g, '');
     filter.$or = [
       { 'profile.name': rx },
       { 'profile.email': rx },
       { 'phone.normalized': rx },
       { 'phone.raw': rx },
+      { 'phone.formatted': rx },
+      ...(digits.length >= 4 && digits !== term ? [{ 'phone.normalized': new RegExp(digits) }] : []),
       { 'profile.city': rx },
     ];
   }
