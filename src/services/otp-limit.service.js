@@ -1,17 +1,22 @@
 import env from '../config/env.js';
 import OtpLimit from '../models/otp-limit.model.js';
+import { addCalendarDays, businessDayOf, startOfBusinessDay } from '../utils/business-date.js';
 import { ERROR_CODES, tooManyRequests } from '../utils/errors.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
-/** The UTC calendar day a request is counted in: "2026-11-20". */
-export const utcDay = (now) => now.toISOString().slice(0, 10);
+/**
+ * The calendar day a request is counted in, in the business timezone
+ * (Asia/Kolkata by default): "2026-11-20". The allowance resets at local
+ * midnight (00:00 IST), not at 00:00 UTC.
+ */
+export const otpDay = (now) => businessDayOf(now);
 
 const secondsUntil = (when, now) => Math.max(1, Math.ceil((when.getTime() - now.getTime()) / 1000));
 
-const nextUtcMidnight = (now) =>
-  new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+/** The instant the next business day begins (next 00:00 IST). */
+const nextDayStart = (now) => startOfBusinessDay(addCalendarDays(otpDay(now), 1));
 
 const isDuplicateKey = (error) => error?.code === 11000;
 
@@ -21,8 +26,8 @@ const MAX_ATTEMPTS = 5;
 
 /**
  * Reserves one of the phone's daily OTP requests, atomically enforcing both
- * the daily limit (UTC day) and the resend cooldown. Throws 429:
- *   OTP_DAILY_LIMIT_REACHED  { retryAfterSeconds (to UTC midnight), limit }
+ * the daily limit (business day, IST) and the resend cooldown. Throws 429:
+ *   OTP_DAILY_LIMIT_REACHED  { retryAfterSeconds (to midnight IST), limit }
  *   OTP_RESEND_COOLDOWN      { retryAfterSeconds }
  *
  * The reservation is charged once the code is handed to the provider; the
@@ -31,7 +36,7 @@ const MAX_ATTEMPTS = 5;
  */
 export const reservePhoneRequest = async (phoneNormalized, now = new Date()) => {
   const { dailyLimit, resendCooldownSeconds } = env.otp;
-  const day = utcDay(now);
+  const day = otpDay(now);
   const _id = `phone:${phoneNormalized}`;
   const cooldownEdge = new Date(now.getTime() - resendCooldownSeconds * 1000);
 
@@ -72,7 +77,7 @@ export const reservePhoneRequest = async (phoneNormalized, now = new Date()) => 
         throw tooManyRequests(
           ERROR_CODES.OTP_DAILY_LIMIT_REACHED,
           `This number has had its ${dailyLimit} codes for today`,
-          { retryAfterSeconds: secondsUntil(nextUtcMidnight(now), now), limit: dailyLimit },
+          { retryAfterSeconds: secondsUntil(nextDayStart(now), now), limit: dailyLimit },
         );
       }
       const resendAt = new Date((current?.lastRequestAt ?? now).getTime() + resendCooldownSeconds * 1000);

@@ -181,3 +181,46 @@ test('the list reads no foods, and nothing is written', async () => {
   assert.equal(collections.includes('foods'), false, collections.join(','));
   assert.deepEqual(await DietPlan.find({}).sort({ _id: 1 }).lean(), before);
 });
+
+test('each plan carries what its meals actually add up to, not only the suggested targets', async () => {
+  // Suggested 1770 kcal; the added food is 113 kcal per 100 g x 200 g = 226.
+  const { plans } = (await list(enrollment._id, tokenFor(prajwalUser))).body.data;
+  const p166 = plans.find((p) => p.planId === 'gogetfit:166');
+  assert.deepEqual(p166.targets, { calories: 1770, protein: 133, carbs: 221, fat: 39 });
+  assert.deepEqual(p166.totals, { calories: 226, protein: 4, carbs: 38, fat: 7 });
+  // The same numbers the plan view itself shows.
+  const view = (await onDay(enrollment._id, '2024-06-01', tokenFor(prajwalUser))).body.data.dietPlan;
+  assert.deepEqual(p166.totals, view.totals);
+});
+
+test('a replaced plan (never shown on any day) opens by id, read only, for its coach only', async () => {
+  // Plan 77: every day of it is covered by the newer plan 95.
+  const replaced = await DietPlan.create(
+    plan({ coachId: (await Coach.findOne({ userId: prajwalUser._id }))._id, planId: 'gogetfit:77', name: 'Old plan', fromDate: day('2023-11-05'), toDate: day('2023-11-06'), assignedAt: new Date('2023-10-01') }),
+  );
+  const token = tokenFor(prajwalUser);
+  const item = (await list(enrollment._id, token)).body.data.plans.find((p) => p.planId === 'gogetfit:77');
+  assert.equal(item.openDate, null, 'replaced: no day to open on');
+  assert.equal(item.dietPlanId, String(replaced._id));
+
+  const before = await DietPlan.findById(replaced._id).lean();
+  const res = await server.request('GET', `/api/coach/enrollments/${enrollment._id}/diet-plans/${item.dietPlanId}`, { token });
+  assert.equal(res.status, 200);
+  const view = res.body.data.dietPlan;
+  assert.equal(view.name, 'Old plan');
+  assert.equal(view.meals.length, 1);
+  assert.equal(view.meals[0].foods[0].qty, 200);
+  assert.deepEqual(view.totals, item.totals);
+  // Opening it changes nothing: same document, still replaced.
+  assert.deepEqual(await DietPlan.findById(replaced._id).lean(), before);
+  const again = (await list(enrollment._id, token)).body.data.plans.find((p) => p.planId === 'gogetfit:77');
+  assert.equal(again.openDate, null);
+
+  // Another coach, another client's plan, or a bad id: not found.
+  const other = await server.request('GET', `/api/coach/enrollments/${siriEnrollment._id}/diet-plans/${item.dietPlanId}`, { token: tokenFor(siriUser) });
+  assert.equal(other.status, 404);
+  const bobPlan = await DietPlan.findOne({ clientId: bob._id }).lean();
+  assert.equal((await server.request('GET', `/api/coach/enrollments/${enrollment._id}/diet-plans/${bobPlan._id}`, { token })).status, 404);
+  assert.equal((await server.request('GET', `/api/coach/enrollments/${enrollment._id}/diet-plans/nope`, { token })).status, 404);
+  assert.equal((await server.request('GET', `/api/coach/enrollments/${enrollment._id}/diet-plans/${item.dietPlanId}`, { token: tokenFor(chethan) })).status, 403);
+});

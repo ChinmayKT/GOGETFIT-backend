@@ -13,6 +13,7 @@ import FoodLog from './models/food-log.model.js';
 import WorkoutPlan from './models/workout-plan.model.js';
 import WeeklyUpdate from './models/weekly-update.model.js';
 import CoachMonthlyCapacity from './models/coach-monthly-capacity.model.js';
+import { ensureTalksIndexes } from './models/talks.models.js';
 
 /**
  * Unique indexes are hard database constraints, so they are built at startup
@@ -33,6 +34,8 @@ const ensureIndexes = async () => {
     WeeklyUpdate.syncIndexes(),
     // One capacity record per coach per month.
     CoachMonthlyCapacity.syncIndexes(),
+    // TALKS: one engagement per account and talk, one event per kind and day.
+    ensureTalksIndexes(),
   ]);
   logger.info('MongoDB indexes verified');
 };

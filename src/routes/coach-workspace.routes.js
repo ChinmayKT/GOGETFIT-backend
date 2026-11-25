@@ -22,6 +22,7 @@ import {
   getCoachDietPlanLibraryItem,
   getCoachClientDietPlanForDay,
   getCoachClientDietPlans,
+  getCoachClientDietPlanById,
   postCoachClientDietPlan,
   putCoachClientDietPlanTargets,
 } from '../controllers/diet-plan.controller.js';
@@ -108,6 +109,8 @@ router.post('/enrollments/:enrollmentId/diet-plans', postCoachClientDietPlan);
 router.put('/enrollments/:enrollmentId/diet-plans/:dietPlanId/coach-targets', putCoachClientDietPlanTargets);
 // The plan that client sees on a day (?date=YYYY-MM-DD, default today).
 router.get('/enrollments/:enrollmentId/diet-plan', getCoachClientDietPlanForDay);
+// One of the client's plans by id - read only (e.g. a replaced plan).
+router.get('/enrollments/:enrollmentId/diet-plans/:dietPlanId', getCoachClientDietPlanById);
 // What the Create Diet Plan screen opens with: six values from the profile only (read-only).
 router.get('/enrollments/:enrollmentId/diet-plan/create-data', getEnrollmentDietPlanCreateData);
 // The Diet Plan library: the coach's own plans or every coach's, and one in full.

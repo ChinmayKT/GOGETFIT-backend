@@ -114,6 +114,15 @@ export const ERROR_CODES = {
   POST_NOT_EDITABLE: 'POST_NOT_EDITABLE',
   POST_INCOMPLETE: 'POST_INCOMPLETE',
   POST_PUBLISHING_DISABLED: 'POST_PUBLISHING_DISABLED',
+  // Talks: an unknown (or, for members, unpublished) talk; a link that is not
+  // a YouTube video; a video already in Talks; publishing without a title (or
+  // from archive); deleting a published talk.
+  TALK_NOT_FOUND: 'TALK_NOT_FOUND',
+  TALK_INVALID_YOUTUBE_URL: 'TALK_INVALID_YOUTUBE_URL',
+  TALK_DUPLICATE: 'TALK_DUPLICATE',
+  TALK_FEATURED_LIMIT: 'TALK_FEATURED_LIMIT',
+  TALK_NOT_READY: 'TALK_NOT_READY',
+  TALK_PUBLISHED: 'TALK_PUBLISHED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 };
 

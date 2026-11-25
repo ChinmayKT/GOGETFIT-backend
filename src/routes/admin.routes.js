@@ -98,6 +98,7 @@ import {
 } from '../controllers/diet-plan.controller.js';
 import { getAdminTransformations } from '../controllers/coach-transformation.controller.js';
 import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
+import adminTalksRoutes from './admin-talks.routes.js';
 import { rawCertificateBody, rawImageBody, rawVideoBody } from '../middleware/upload.middleware.js';
 
 const router = Router();
@@ -111,6 +112,9 @@ const router = Router();
  * unprotected by forgetting to list the middleware.
  */
 router.use(requireAuth, requireRole(ROLE_ADMIN));
+
+// TALKS management (its own module and collections).
+router.use('/talks', adminTalksRoutes);
 
 router.get('/me', getAdminMe);
 router.get('/users', getAdminUsers);

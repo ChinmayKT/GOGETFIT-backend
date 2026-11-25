@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 /**
  * OTP request counters, shared by every API process (MongoDB, not memory).
  *
- *   phone:<normalized>       one document per phone identity: today's UTC day,
+ *   phone:<normalized>       one document per phone identity: today's IST day,
  *                            requests charged that day, last request time
  *                            (the resend cooldown).
  *   ip:<address>:<UTC hour>  requests from one address in one clock hour.

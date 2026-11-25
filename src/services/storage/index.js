@@ -91,5 +91,8 @@ export const foodLogMealImageFolder = (clientId, logDate, meal) => `food-logs/${
 /** A coach's transformation submissions: a folder per coach. */
 export const coachTransformationFolder = (coachId) => `coach-transformations/${coachId}`;
 
+/** A Talk's own files (the admin's thumbnail), one folder per talk and slot. */
+export const talkMediaFolder = (talkId, slot) => `talks/${talkId}/${slot}`;
+
 /** One Feed post's media slot, e.g. `posts/<postId>/media-0` or `.../media-0-thumbnail`. */
 export const postMediaFolder = (postId, slot) => `posts/${postId}/${slot}`;

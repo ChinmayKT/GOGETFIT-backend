@@ -18,7 +18,7 @@ import {
   startTestServer,
 } from '../helpers/test-server.js';
 
-// Phase 2: 3 OTP requests per phone per UTC day, 60 s resend cooldown, 5 min
+// Phase 2: 3 OTP requests per phone per IST day, 60 s resend cooldown, 5 min
 // validity, 5 wrong attempts per code, 20 requests per IP per hour - all in
 // MongoDB, atomic, charged only once the provider accepts (or may have).
 
@@ -104,7 +104,8 @@ test('a resend within 60 s is 429 OTP_RESEND_COOLDOWN with the seconds left', as
 });
 
 test('cooldown and daily reset against the clock', async () => {
-  const t0 = new Date('2026-11-20T23:57:00Z');
+  // 23:57 IST on 2026-11-20 (18:27 UTC): the day ends at 00:00 IST.
+  const t0 = new Date('2026-11-20T18:27:00Z');
   const at = (s) => new Date(t0.getTime() + s * 1000);
   await reservePhoneRequest('14155550123', at(0));
   await assert.rejects(reservePhoneRequest('14155550123', at(59)), { code: 'OTP_RESEND_COOLDOWN' });
@@ -112,10 +113,10 @@ test('cooldown and daily reset against the clock', async () => {
   await reservePhoneRequest('14155550123', at(120));
   await assert.rejects(reservePhoneRequest('14155550123', at(150)), (error) => {
     assert.equal(error.code, 'OTP_DAILY_LIMIT_REACHED');
-    assert.equal(error.details.retryAfterSeconds, 30); // to 00:00 UTC
+    assert.equal(error.details.retryAfterSeconds, 30); // to 00:00 IST
     return true;
   });
-  // A new UTC day: a fresh allowance (count starts again at 1).
+  // A new IST day: a fresh allowance (count starts again at 1).
   await reservePhoneRequest('14155550123', at(181));
   const doc = await phoneDoc('14155550123');
   assert.equal(doc.day, '2026-11-21');

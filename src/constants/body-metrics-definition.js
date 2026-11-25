@@ -4,7 +4,8 @@
  * Every key, unit and range is copied from the Flutter definition
  * (lib/features/body_metrics/domain/body_metric.dart, `bodyMetrics`): three
  * personal metrics and eight body measurements, stored in the app's canonical
- * units - years, centimetres, kilograms. Nothing is invented here.
+ * units - years, centimetres, kilograms. min / max describe the usual range
+ * only: any finite number is accepted. Nothing is invented here.
  *
  * Media: three required photos and one optional video, stored by reference.
  */
@@ -13,8 +14,11 @@
 export const BODY_METRICS_SCHEMA_VERSION = 1;
 
 export const BODY_MEASUREMENTS = [
-  { key: 'age', label: 'Age', unit: 'years', min: 13, max: 80, integer: true },
-  { key: 'height', label: 'Height', unit: 'cm', min: 120, max: 220 },
+  // Age and height are no longer asked on the form: optional, and filled from
+  // the member's questionnaire / profile on submit (body composition needs
+  // them). Kept so older records still read back with theirs.
+  { key: 'age', label: 'Age', unit: 'years', min: 13, max: 80, optional: true },
+  { key: 'height', label: 'Height', unit: 'cm', min: 120, max: 220, optional: true },
   { key: 'weight', label: 'Weight', unit: 'kg', min: 30, max: 250 },
   { key: 'neck', label: 'Neck', unit: 'cm', min: 25, max: 60 },
   { key: 'chest', label: 'Chest', unit: 'cm', min: 60, max: 160 },

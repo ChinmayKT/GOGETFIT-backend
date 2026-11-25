@@ -42,19 +42,11 @@ export const programPolicy = () => ({
 // ─── coupon generation ───────────────────────────────────────────────────────
 
 /**
- * The first three letters of [name], upper-cased, with accents folded and
- * everything else dropped. A shorter name is padded with X ("Al" -> "ALX");
- * a name with no letters at all gives "GGF". Deterministic: the same name
- * always gives the same prefix.
+ * Every new ambassador code is GGF + a global four-digit sequence (GGF0001,
+ * GGF0002, ...; past 9999 it simply grows a digit). Codes from before this
+ * format (name prefix + digits, e.g. CHI0001) are kept and keep working.
  */
-export const couponPrefix = (name) => {
-  const letters = String(name ?? '')
-    .normalize('NFD')
-    .replace(/[^A-Za-z]/g, '')
-    .toUpperCase();
-  if (letters.length === 0) return 'GGF';
-  return letters.slice(0, 3).padEnd(3, 'X');
-};
+export const COUPON_PREFIX = 'GGF';
 
 /**
  * Allocates the next suffix for [prefix] with one atomic $inc, so two
@@ -129,11 +121,11 @@ export const registerAmbassador = async (userId) => {
   const existing = await getMyAmbassador(userId);
   if (existing) return { ambassador: existing, created: false };
 
-  const user = await User.findById(userId, { status: 1, profile: 1 }).lean();
+  const user = await User.findById(userId, { status: 1 }).lean();
   if (!user) throw notFound(ERROR_CODES.USER_NOT_FOUND, 'User not found');
   if (user.status !== 'active') throw badRequest(ERROR_CODES.USER_INACTIVE, `User is ${user.status ?? 'not active'}`);
 
-  const couponCode = await allocateCode(couponPrefix(user.profile?.name));
+  const couponCode = await allocateCode(COUPON_PREFIX);
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -333,6 +325,7 @@ const REFERRAL_LABEL = { pending: 'Pending', successful: 'Successful' };
 const ACTION_LABEL = {
   registered: 'Ambassador registered',
   coupon_generated: 'Coupon generated',
+  coupon_code_changed: 'Coupon code changed',
   activated: 'Coupon activated',
   deactivated: 'Coupon deactivated',
   referral_pending: 'Referral pending',

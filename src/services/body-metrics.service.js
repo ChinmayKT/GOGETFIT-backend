@@ -17,6 +17,7 @@ import { assertValidImage } from '../utils/image.js';
 import { assertValidVideo } from '../utils/video.js';
 import { ERROR_CODES, AppError, conflict, notFound } from '../utils/errors.js';
 import { validateBodyMetricsSave, validateMediaSlot } from '../validators/body-metrics.validator.js';
+import { profileSnapshot } from './daily-update.service.js';
 import { bodyMetricsMediaFolder, getStorage } from './storage/index.js';
 
 /**
@@ -105,7 +106,7 @@ const draftFilter = (userId, enrollmentId) => ({ userId, enrollmentId, status: {
 
 /** What a submission is still missing: measurements and required photos. */
 const missingForSubmission = (doc) => [
-  ...BODY_MEASUREMENTS.filter((m) => doc[m.key] === null || doc[m.key] === undefined).map((m) => m.key),
+  ...BODY_MEASUREMENTS.filter((m) => !m.optional && (doc[m.key] === null || doc[m.key] === undefined)).map((m) => m.key),
   ...REQUIRED_PHOTO_SLOTS.filter((slot) => !doc[slot]?.url),
 ];
 
@@ -121,8 +122,8 @@ export const getMemberBodyMetrics = async (userId, enrollmentId) => {
  * POST - creates the enrollment's Body Metrics or updates the draft.
  *
  * Measurements are MERGED (a draft can be saved field by field; null clears
- * one). `status: "submitted"` is accepted only when all 11 measurements and the
- * three photos are on the record; submittedAt is stamped then. A submitted
+ * one). `status: "submitted"` is accepted only when the 9 asked measurements
+ * and the three photos are on the record (age / height come from the profile); submittedAt is stamped then. A submitted
  * record refuses every write.
  */
 export const saveMemberBodyMetrics = async (userId, enrollmentId, body) => {
@@ -146,6 +147,14 @@ export const saveMemberBodyMetrics = async (userId, enrollmentId, body) => {
     const missing = missingForSubmission(merged);
     if (missing.length) {
       throw new AppError(400, ERROR_CODES.BODY_METRICS_INCOMPLETE, `Body Metrics are incomplete: ${missing.join(', ')}`, { missing });
+    }
+    // Age and height are not asked any more: the questionnaire / profile
+    // fills them (as on Weekly Update) so body composition still works.
+    if (merged.age == null || merged.height == null) {
+      const user = await User.findById(userId, { profile: 1 }).lean();
+      const profile = user ? await profileSnapshot(user, enrollmentId) : {};
+      if (merged.age == null && profile.age != null) set.age = profile.age;
+      if (merged.height == null && profile.heightCm != null) set.height = profile.heightCm;
     }
     set.status = 'submitted';
     set.submittedAt = new Date();

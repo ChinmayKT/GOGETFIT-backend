@@ -8,8 +8,8 @@ import { ERROR_CODES, badRequest } from '../utils/errors.js';
  * the gender copied from the user profile are refused outright rather than
  * ignored, so a client trying to set them learns it cannot. Media are not part of this body: they go through the upload route.
  *
- * Every measurement given must be a finite number inside the app's own range
- * (age a whole number). A draft may leave any of them out; null clears one.
+ * Every measurement given must be a finite number - no range, precision or
+ * length limit. A draft may leave any of them out; null clears one.
  */
 
 const invalid = (message) => badRequest(ERROR_CODES.VALIDATION_ERROR, message);
@@ -17,12 +17,7 @@ const invalid = (message) => badRequest(ERROR_CODES.VALIDATION_ERROR, message);
 const FORBIDDEN_KEYS = ['userId', 'enrollmentId', 'coachId', 'gender', 'submittedAt', 'schemaVersion', ...MEDIA_SLOTS];
 
 export const validateMeasurement = (key, value) => {
-  const def = BODY_MEASUREMENT_BY_KEY.get(key);
   if (typeof value !== 'number' || !Number.isFinite(value)) throw invalid(`${key} must be a number`);
-  if (def.integer && !Number.isInteger(value)) throw invalid(`${key} must be a whole number`);
-  if (value < def.min || value > def.max) {
-    throw invalid(`${key} must be between ${def.min} and ${def.max} ${def.unit}`);
-  }
   return value;
 };
 

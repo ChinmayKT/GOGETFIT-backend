@@ -73,6 +73,15 @@ export const env = {
     memberPublishing: bool(process.env.FEED_MEMBER_PUBLISHING, false),
   },
 
+  /**
+   * TALKS - curated GOGETFIT YouTube videos (links + metadata from YouTube's
+   * public oEmbed endpoint; no API key, nothing hosted here).
+   */
+  talks: {
+    /** Engagement writes (Hi-Fi, Save, events) per user per minute. */
+    engagementRateLimit: int(process.env.TALKS_ENGAGEMENT_RATE_LIMIT, 120),
+  },
+
   // Brand Ambassador programme policy. Each ambassador's discount and
   // commission are copied onto their record at registration, so changing these
   // affects new ambassadors only - never an existing code or a past referral.

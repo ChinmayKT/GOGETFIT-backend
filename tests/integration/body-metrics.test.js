@@ -213,10 +213,8 @@ test('submission is refused without a required photo or a measurement', async ()
 test('invalid measurements and forbidden fields are refused', async () => {
   const e = await enroll(member, coachA);
   for (const body of [
-    { measurements: { age: 12 } }, // below the app's range
-    { measurements: { age: 30.5 } }, // not whole
-    { measurements: { waist: 161 } },
-    { measurements: { neck: '38' } },
+    { measurements: { neck: '38' } }, // text, not a number
+    { measurements: { neck: 'abc' } },
     { measurements: { biceps: 30 } },
     { measurements: ALL, userId: String(other._id) },
     { measurements: ALL, coachId: String(coachB._id) },
@@ -229,6 +227,38 @@ test('invalid measurements and forbidden fields are refused', async () => {
     assert.equal(res.status, 400, JSON.stringify(body));
   }
   assert.equal(await BodyMetrics.countDocuments(), 0);
+});
+
+test('any number is accepted: no range, whole-number, precision or length limit', async () => {
+  const e = await enroll(member, coachA);
+  const free = { weight: 0.5, neck: 12, chest: 999.125, waist: 1234567.75, hips: 30.123456, rightArm: 3 };
+  const res = await save(e._id, { measurements: free });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const doc = await stored(e._id);
+  for (const [key, value] of Object.entries(free)) assert.equal(doc[key], value, key);
+});
+
+test('age and height are not required: a submission without them is filled from the questionnaire / profile', async () => {
+  const e = await enroll(member, coachA);
+  await User.updateOne({ _id: member._id }, { $set: { 'profile.age': 29, 'profile.fitnessProfile.height': 172 } });
+  const { age, height, ...asked } = ALL;
+  await save(e._id, { measurements: asked });
+  await photos(e._id);
+  const res = await save(e._id, { status: 'submitted' });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const doc = await stored(e._id);
+  assert.equal(doc.status, 'submitted');
+  assert.equal(doc.age, 29);
+  assert.equal(doc.height, 172);
+
+  // No profile values either: still submits, age / height simply absent.
+  const e2 = await enroll(other, coachA);
+  await save(e2._id, { measurements: asked }, otherToken);
+  for (const [slot, fill] of [['front', 1], ['side', 2], ['back', 3]]) await upload(e2._id, slot, jpeg(fill), { token: otherToken });
+  assert.equal((await save(e2._id, { status: 'submitted' }, otherToken)).status, 200);
+  const doc2 = await stored(e2._id);
+  assert.equal(doc2.age, null);
+  assert.equal(doc2.height, null);
 });
 
 test('bad media is refused: wrong slot, not an image, not an MP4', async () => {

@@ -40,11 +40,6 @@ export class LocalStorageDriver {
     return `${this.publicBaseUrl}${this.publicPath}/${safeFolder}/${fileName}`;
   }
 
-  /**
-   * Deletes a previously stored file. A URL this driver did not issue, or a
-   * file that is already gone, is ignored rather than failing the request -
-   * the user's action has already succeeded by this point.
-   */
   async remove(url) {
     const relative = this.toRelativePath(url);
     if (!relative) return false;

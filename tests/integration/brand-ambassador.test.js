@@ -14,8 +14,9 @@ import {
   BrandAmbassadorCoupon,
   BrandAmbassadorPayout,
   BrandAmbassadorReferral,
+  BrandAmbassadorSequence,
 } from '../../src/models/brand-ambassador.model.js';
-import { couponPrefix, recordReferralForEnrollment } from '../../src/services/brand-ambassador.service.js';
+import { COUPON_PREFIX, recordReferralForEnrollment } from '../../src/services/brand-ambassador.service.js';
 import { setNow } from '../../src/utils/clock.js';
 import { clearTestDb, connectTestDb, disconnectTestDb, startTestServer } from '../helpers/test-server.js';
 
@@ -115,29 +116,22 @@ after(async () => {
 
 // ─── coupon generation ───────────────────────────────────────────────────────
 
-test('coupon prefix: first three letters, upper-cased, deterministic fallbacks', () => {
-  assert.equal(couponPrefix('Chinmay K T'), 'CHI');
-  assert.equal(couponPrefix('  r.a-h ul '), 'RAH');
-  assert.equal(couponPrefix('Élodie'), 'ELO');
-  assert.equal(couponPrefix('Al'), 'ALX');
-  assert.equal(couponPrefix('42 !!'), 'GGF');
-  assert.equal(couponPrefix(null), 'GGF');
-});
-
-test('register generates CHI0001 for the token user; a second Chinmay gets CHI0002', async () => {
+test('register generates GGF0001 for the token user; the next ambassadors get GGF0002, GGF0003 whatever their names', async () => {
   const res = await register(chinmayToken);
   assert.equal(res.status, 201);
-  assert.equal(res.body.data.ambassador.couponCode, 'CHI0001');
+  assert.equal(res.body.data.ambassador.couponCode, 'GGF0001');
   assert.equal(res.body.data.ambassador.discountPercent, 5);
   assert.equal(res.body.data.ambassador.successfulReferrals, 0);
 
-  const stored = await BrandAmbassadorCoupon.findOne({ couponCode: 'CHI0001' }).lean();
+  const stored = await BrandAmbassadorCoupon.findOne({ couponCode: 'GGF0001' }).lean();
   assert.equal(String(stored.userId), String(chinmay._id));
 
   const other = await seedUser('919000000003', 'Chinmayi');
-  const second = await register(tokenFor(other));
-  assert.equal(second.body.data.ambassador.couponCode, 'CHI0002');
-  assert.equal((await register(rahulToken)).body.data.ambassador.couponCode, 'RAH0001');
+  assert.equal((await register(tokenFor(other))).body.data.ambassador.couponCode, 'GGF0002');
+  assert.equal((await register(rahulToken)).body.data.ambassador.couponCode, 'GGF0003');
+  const noLetters = await seedUser('919000000004', '42 !!');
+  assert.equal((await register(tokenFor(noLetters))).body.data.ambassador.couponCode, 'GGF0004');
+  assert.equal(COUPON_PREFIX, 'GGF');
 });
 
 test('register is idempotent: repeats and concurrent taps give one code', async () => {
@@ -151,39 +145,91 @@ test('register is idempotent: repeats and concurrent taps give one code', async 
   assert.equal(again.body.data.created, false);
 });
 
-test('concurrent registrations of the same prefix never share a code', async () => {
+test('concurrent registrations get distinct, gap-free sequential codes', async () => {
   const users = await Promise.all(
-    Array.from({ length: 6 }, (_, i) => seedUser(`91900000010${i}`, `Chiranjeevi ${i}`)),
+    Array.from({ length: 12 }, (_, i) => seedUser(`9190000001${String(i).padStart(2, '0')}`, `Member ${i}`)),
   );
   const results = await Promise.all(users.map((u) => register(tokenFor(u))));
+  assert.ok(results.every((r) => r.status === 201));
   const codes = results.map((r) => r.body.data.ambassador.couponCode).sort();
-  assert.deepEqual(codes, ['CHI0001', 'CHI0002', 'CHI0003', 'CHI0004', 'CHI0005', 'CHI0006']);
+  assert.deepEqual(codes, Array.from({ length: 12 }, (_, i) => `GGF${String(i + 1).padStart(4, '0')}`));
+  assert.equal(new Set(await BrandAmbassadorCoupon.distinct('couponCode')).size, 12);
 });
 
 test('a name change never regenerates the code', async () => {
   await register(chinmayToken);
   await User.updateOne({ _id: chinmay._id }, { $set: { 'profile.name': 'Zara' } });
   const again = await register(chinmayToken);
-  assert.equal(again.body.data.ambassador.couponCode, 'CHI0001');
-  assert.equal((await me(chinmayToken)).body.data.ambassador.couponCode, 'CHI0001');
+  assert.equal(again.body.data.ambassador.couponCode, 'GGF0001');
+  assert.equal((await me(chinmayToken)).body.data.ambassador.couponCode, 'GGF0001');
 });
 
 test('generation skips a code an admin coupon already uses', async () => {
   await Coupon.create({
-    code: 'CHI0001',
+    code: 'GGF0001',
     discount: { type: 'percent', value: 10 },
     validFrom: new Date('2026-01-01'),
     validTo: new Date('2027-01-01'),
     createdBy: admin._id,
     updatedBy: admin._id,
   });
-  assert.equal((await register(chinmayToken)).body.data.ambassador.couponCode, 'CHI0002');
+  assert.equal((await register(chinmayToken)).body.data.ambassador.couponCode, 'GGF0002');
+});
+
+test('the GGF counter continues from where it is and skips codes already held', async () => {
+  // A pre-existing GGF code (old-format fallback for a name with no letters)
+  // with no counter document, then a counter that is already further on.
+  await BrandAmbassadorCoupon.create({ userId: rahul._id, couponCode: 'GGF0001', discountValue: 5, commissionValue: 5 });
+  assert.equal((await register(chinmayToken)).body.data.ambassador.couponCode, 'GGF0002');
+  await BrandAmbassadorSequence.updateOne({ _id: 'GGF' }, { $set: { seq: 41 } });
+  const other = await seedUser('919000000003', 'Asha');
+  assert.equal((await register(tokenFor(other))).body.data.ambassador.couponCode, 'GGF0042');
+});
+
+test('existing name-format codes are kept and keep working end to end', async () => {
+  // An ambassador from before the GGF format.
+  const legacy = await BrandAmbassadorCoupon.create({ userId: chinmay._id, couponCode: 'CHI0007', discountValue: 5, commissionValue: 5 });
+
+  // Not regenerated: register and /me return the old code.
+  const again = await register(chinmayToken);
+  assert.equal(again.status, 200);
+  assert.equal(again.body.data.ambassador.couponCode, 'CHI0007');
+  assert.equal((await me(chinmayToken)).body.data.ambassador.couponCode, 'CHI0007');
+
+  // New ambassadors get the new format alongside it.
+  const other = await seedUser('919000000003', 'Chinmayi');
+  assert.equal((await register(tokenFor(other))).body.data.ambassador.couponCode, 'GGF0001');
+
+  // Validation (any case), purchase, referral and commission all work.
+  const { quote, bought } = await buyWithCode(rahulToken, 'chi0007', 'pay_legacy_1');
+  assert.equal(quote.status, 200);
+  assert.deepEqual(quote.body.data.item.pricing.coupon, { id: null, code: 'CHI0007', discountPercent: 5, kind: 'ambassador' });
+  assert.equal(bought.status, 201);
+  const referral = await BrandAmbassadorReferral.findOne({ ambassadorCouponId: legacy._id }).lean();
+  assert.equal(referral.couponCode, 'CHI0007');
+  assert.equal(referral.referralStatus, 'successful');
+  assert.equal(referral.grossCommission, 475);
+  assert.equal((await me(chinmayToken)).body.data.ambassador.successfulReferrals, 1);
+
+  const found = await req('GET', '/api/admin/ambassadors?search=chi0007', adminToken);
+  assert.deepEqual(found.body.data.ambassadors.map((a) => a.couponCode), ['CHI0007']);
+});
+
+test('GGF codes validate case-insensitively and are always shown upper-case', async () => {
+  await register(chinmayToken);
+  const added = await req('POST', '/api/users/me/cart', rahulToken, { coachId: String(coach._id), planId: String(plan._id) });
+  for (const code of ['ggf0001', 'Ggf0001', '  GGF0001 ']) {
+    const quote = await req('POST', `/api/users/me/cart/${added.body.data.item.id}/quote`, rahulToken, { couponCode: code });
+    assert.equal(quote.status, 200, code);
+    assert.equal(quote.body.data.item.pricing.coupon.code, 'GGF0001', code);
+  }
+  assert.equal((await me(chinmayToken)).body.data.ambassador.couponCode, 'GGF0001');
 });
 
 test('an admin coupon cannot take an ambassador code', async () => {
   await register(chinmayToken);
   const res = await req('POST', '/api/admin/coupons', adminToken, {
-    code: 'chi0001',
+    code: 'ggf0001',
     discount: { type: 'percent', value: 10 },
     validFrom: '2026-01-01',
     validTo: '2027-01-01',
@@ -215,13 +261,13 @@ test('GET /me: null before joining, with the programme terms', async () => {
 test('checkout: an ambassador code gives 5% off, priced by the server', async () => {
   await register(chinmayToken);
   const added = await req('POST', '/api/users/me/cart', rahulToken, { coachId: String(coach._id), planId: String(plan._id) });
-  const quote = await req('POST', `/api/users/me/cart/${added.body.data.item.id}/quote`, rahulToken, { couponCode: 'chi0001' });
+  const quote = await req('POST', `/api/users/me/cart/${added.body.data.item.id}/quote`, rahulToken, { couponCode: 'ggf0001' });
   assert.equal(quote.status, 200);
   const pricing = quote.body.data.item.pricing;
   assert.equal(pricing.originalAmount, 10000);
   assert.equal(pricing.discountAmount, 500);
   assert.equal(pricing.finalAmount, 9500);
-  assert.deepEqual(pricing.coupon, { id: null, code: 'CHI0001', discountPercent: 5, kind: 'ambassador' });
+  assert.deepEqual(pricing.coupon, { id: null, code: 'GGF0001', discountPercent: 5, kind: 'ambassador' });
 });
 
 test('checkout refuses own code, inactive code and unknown code; admin coupons still work', async () => {
@@ -229,7 +275,7 @@ test('checkout refuses own code, inactive code and unknown code; admin coupons s
   const added = await req('POST', '/api/users/me/cart', chinmayToken, { coachId: String(coach._id), planId: String(plan._id) });
   const quote = (body) => req('POST', `/api/users/me/cart/${added.body.data.item.id}/quote`, chinmayToken, body);
 
-  const own = await quote({ couponCode: 'CHI0001' });
+  const own = await quote({ couponCode: 'GGF0001' });
   assert.equal(own.status, 400);
   assert.equal(own.body.error.code, 'AMBASSADOR_SELF_REFERRAL');
 
@@ -248,9 +294,9 @@ test('checkout refuses own code, inactive code and unknown code; admin coupons s
   assert.equal(byId.body.data.item.pricing.finalAmount, 9000);
   assert.equal(byId.body.data.item.pricing.coupon.kind, 'coupon');
 
-  await BrandAmbassadorCoupon.updateOne({ couponCode: 'CHI0001' }, { $set: { status: 'inactive' } });
+  await BrandAmbassadorCoupon.updateOne({ couponCode: 'GGF0001' }, { $set: { status: 'inactive' } });
   const rahulCart = await req('POST', '/api/users/me/cart', rahulToken, { coachId: String(coach._id), planId: String(plan._id) });
-  const inactive = await req('POST', `/api/users/me/cart/${rahulCart.body.data.item.id}/quote`, rahulToken, { couponCode: 'CHI0001' });
+  const inactive = await req('POST', `/api/users/me/cart/${rahulCart.body.data.item.id}/quote`, rahulToken, { couponCode: 'GGF0001' });
   assert.equal(inactive.status, 400);
   assert.equal(inactive.body.error.code, 'COUPON_INACTIVE');
 });
@@ -258,7 +304,7 @@ test('checkout refuses own code, inactive code and unknown code; admin coupons s
 test('a coupon application alone creates no referral', async () => {
   await register(chinmayToken);
   const added = await req('POST', '/api/users/me/cart', rahulToken, { coachId: String(coach._id), planId: String(plan._id) });
-  await req('POST', `/api/users/me/cart/${added.body.data.item.id}/quote`, rahulToken, { couponCode: 'CHI0001' });
+  await req('POST', `/api/users/me/cart/${added.body.data.item.id}/quote`, rahulToken, { couponCode: 'GGF0001' });
   assert.equal(await BrandAmbassadorReferral.countDocuments({}), 0);
 });
 
@@ -266,11 +312,11 @@ test('a coupon application alone creates no referral', async () => {
 
 test('a purchase with the code creates one referral; retries and repeat confirmations never add another', async () => {
   await register(chinmayToken);
-  const { id, bought } = await buyWithCode(rahulToken, 'CHI0001', 'pay_rahul_1');
+  const { id, bought } = await buyWithCode(rahulToken, 'GGF0001', 'pay_rahul_1');
   assert.equal(bought.status, 201);
 
   const order = await EnrolledClient.findOne({ userId: rahul._id }).lean();
-  const ambassador = await BrandAmbassadorCoupon.findOne({ couponCode: 'CHI0001' }).lean();
+  const ambassador = await BrandAmbassadorCoupon.findOne({ couponCode: 'GGF0001' }).lean();
   assert.equal(String(order.ambassadorCouponId), String(ambassador._id));
   assert.equal(order.payment.amount, 9500);
 
@@ -286,7 +332,7 @@ test('a purchase with the code creates one referral; retries and repeat confirma
   assert.equal(referral.netCommission, 427);
 
   // The same purchase retried, and the confirmation hook run again (a duplicate webhook).
-  const retry = await req('POST', `/api/users/me/cart/${id}/purchase`, rahulToken, { couponCode: 'CHI0001', paymentReference: 'pay_rahul_1' });
+  const retry = await req('POST', `/api/users/me/cart/${id}/purchase`, rahulToken, { couponCode: 'GGF0001', paymentReference: 'pay_rahul_1' });
   assert.equal(retry.status, 200);
   await recordReferralForEnrollment(order._id);
   await Promise.all([recordReferralForEnrollment(order._id), recordReferralForEnrollment(order._id)]);
@@ -296,7 +342,7 @@ test('a purchase with the code creates one referral; retries and repeat confirma
 
 test('an unpaid order is pending and not counted until its payment succeeds', async () => {
   await register(chinmayToken);
-  const ambassador = await BrandAmbassadorCoupon.findOne({ couponCode: 'CHI0001' }).lean();
+  const ambassador = await BrandAmbassadorCoupon.findOne({ couponCode: 'GGF0001' }).lean();
   const order = await EnrolledClient.create({
     userId: rahul._id,
     planId: plan._id,
@@ -320,7 +366,7 @@ test('an unpaid order is pending and not counted until its payment succeeds', as
 
 test('the database refuses a second referral for the same order', async () => {
   await register(chinmayToken);
-  await buyWithCode(rahulToken, 'CHI0001', 'pay_rahul_1');
+  await buyWithCode(rahulToken, 'GGF0001', 'pay_rahul_1');
   const existing = await BrandAmbassadorReferral.findOne({}).lean();
   const { _id, createdAt, updatedAt, ...copy } = existing;
   await assert.rejects(BrandAmbassadorReferral.create(copy), (e) => e.code === 11000);
@@ -330,7 +376,7 @@ test('the database refuses a second referral for the same order', async () => {
 
 test('the mobile profile carries the count only - no customer, order, plan or payment', async () => {
   await register(chinmayToken);
-  await buyWithCode(rahulToken, 'CHI0001', 'pay_rahul_1');
+  await buyWithCode(rahulToken, 'GGF0001', 'pay_rahul_1');
   const body = JSON.stringify((await me(chinmayToken)).body);
   for (const leak of ['Rahul', '919000000002', String(rahul._id), 'WEEKS', 'pay_rahul_1', 'example.com']) {
     assert.equal(body.includes(leak), false, `leaked ${leak}`);
@@ -341,7 +387,7 @@ test('the mobile profile carries the count only - no customer, order, plan or pa
 
 test('every admin ambassador route refuses members and anonymous callers', async () => {
   await register(chinmayToken);
-  await buyWithCode(rahulToken, 'CHI0001', 'pay_rahul_1');
+  await buyWithCode(rahulToken, 'GGF0001', 'pay_rahul_1');
   const amb = await BrandAmbassadorCoupon.findOne({}).lean();
   const ref = await BrandAmbassadorReferral.findOne({}).lean();
   const routes = [
@@ -367,13 +413,13 @@ test('every admin ambassador route refuses members and anonymous callers', async
 test('admin list: search, filter, sort, paging and summary from real records', async () => {
   await register(chinmayToken);
   await register(rahulToken);
-  await buyWithCode(await tokenFor(await seedUser('919000000009', 'Neha Sharma')), 'CHI0001', 'pay_neha');
+  await buyWithCode(await tokenFor(await seedUser('919000000009', 'Neha Sharma')), 'GGF0001', 'pay_neha');
 
   const list = await req('GET', '/api/admin/ambassadors?sortKey=successfulReferrals&sortDir=desc', adminToken);
   assert.equal(list.status, 200);
   assert.equal(list.body.data.pagination.total, 2);
   const [top] = list.body.data.ambassadors;
-  assert.equal(top.couponCode, 'CHI0001');
+  assert.equal(top.couponCode, 'GGF0001');
   assert.equal(top.name, 'Chinmay K T');
   assert.equal(top.email, '919000000001@example.com');
   assert.equal(top.mobile, '+919000000001');
@@ -381,19 +427,19 @@ test('admin list: search, filter, sort, paging and summary from real records', a
   assert.equal(top.salesAmount, 9500);
   assert.deepEqual(list.body.data.summary, { totalAmbassadors: 2, totalReferrals: 1, totalSales: 9500, totalCommissionPayable: 427 });
 
-  for (const search of ['chinmay', 'CHI0001', '9000000001', String(chinmay._id), '919000000001@example']) {
+  for (const search of ['chinmay', 'GGF0001', '9000000001', String(chinmay._id), '919000000001@example']) {
     const found = await req('GET', `/api/admin/ambassadors?search=${encodeURIComponent(search)}`, adminToken);
-    assert.deepEqual(found.body.data.ambassadors.map((a) => a.couponCode), ['CHI0001'], search);
+    assert.deepEqual(found.body.data.ambassadors.map((a) => a.couponCode), ['GGF0001'], search);
   }
   const paged = await req('GET', '/api/admin/ambassadors?pageSize=1&page=2&sortKey=couponCode&sortDir=asc', adminToken);
-  assert.deepEqual(paged.body.data.ambassadors.map((a) => a.couponCode), ['RAH0001']);
+  assert.deepEqual(paged.body.data.ambassadors.map((a) => a.couponCode), ['GGF0002']);
   const inactive = await req('GET', '/api/admin/ambassadors?status=Inactive', adminToken);
   assert.equal(inactive.body.data.pagination.total, 0);
 });
 
 test('admin referrals: the full transaction, filters, detail and plans', async () => {
   await register(chinmayToken);
-  await buyWithCode(rahulToken, 'CHI0001', 'pay_rahul_1');
+  await buyWithCode(rahulToken, 'GGF0001', 'pay_rahul_1');
   const amb = await BrandAmbassadorCoupon.findOne({}).lean();
 
   const res = await req('GET', `/api/admin/ambassadors/${amb._id}/referrals`, adminToken);
@@ -403,7 +449,7 @@ test('admin referrals: the full transaction, filters, detail and plans', async (
   assert.equal(row.customerUserId, String(rahul._id));
   assert.equal(row.email, '919000000002@example.com');
   assert.equal(row.mobile, '+919000000002');
-  assert.equal(row.couponCode, 'CHI0001');
+  assert.equal(row.couponCode, 'GGF0001');
   assert.equal(row.ambassadorName, 'Chinmay K T');
   assert.equal(row.planName, '12 WEEKS GOGETFIT PLAN');
   assert.equal(row.planId, String(plan._id));
@@ -451,7 +497,7 @@ test('admin status change: validated, audited, and it stops the code at checkout
 
 test('payouts and activity come from the ledger and audit trail', async () => {
   await register(chinmayToken);
-  await buyWithCode(rahulToken, 'CHI0001', 'pay_rahul_1');
+  await buyWithCode(rahulToken, 'GGF0001', 'pay_rahul_1');
   const amb = await BrandAmbassadorCoupon.findOne({}).lean();
 
   const payouts = (await req('GET', `/api/admin/ambassadors/${amb._id}/payouts`, adminToken)).body.data.payouts;
@@ -475,14 +521,14 @@ test('payouts and activity come from the ledger and audit trail', async () => {
 
 // ─── the full scenario ───────────────────────────────────────────────────────
 
-test('end to end: Chinmay registers, Rahul buys with CHI0001, the count goes 12 -> 13 and stays there', async () => {
+test('end to end: Chinmay registers, Rahul buys with GGF0001, the count goes 12 -> 13 and stays there', async () => {
   const reg = await register(chinmayToken);
-  assert.equal(reg.body.data.ambassador.couponCode, 'CHI0001');
+  assert.equal(reg.body.data.ambassador.couponCode, 'GGF0001');
   const amb = await BrandAmbassadorCoupon.findOne({ userId: chinmay._id }).lean();
   await seedEarlierReferrals(amb, 12);
   assert.equal((await me(chinmayToken)).body.data.ambassador.successfulReferrals, 12);
 
-  const { quote, bought } = await buyWithCode(rahulToken, 'CHI0001', 'pay_rahul_e2e');
+  const { quote, bought } = await buyWithCode(rahulToken, 'GGF0001', 'pay_rahul_e2e');
   assert.equal(quote.body.data.item.pricing.finalAmount, 9500);
   assert.equal(bought.status, 201);
 
@@ -490,7 +536,7 @@ test('end to end: Chinmay registers, Rahul buys with CHI0001, the count goes 12 
   assert.equal(mine.body.data.ambassador.successfulReferrals, 13);
   assert.equal(JSON.stringify(mine.body).includes('Rahul'), false);
 
-  const list = await req('GET', '/api/admin/ambassadors?search=CHI0001', adminToken);
+  const list = await req('GET', '/api/admin/ambassadors?search=GGF0001', adminToken);
   assert.equal(list.body.data.ambassadors[0].successfulReferrals, 13);
   const detail = await req('GET', `/api/admin/ambassadors/${amb._id}`, adminToken);
   assert.equal(detail.body.data.ambassador.successfulReferrals, 13);
@@ -510,7 +556,7 @@ test('end to end: Chinmay registers, Rahul buys with CHI0001, the count goes 12 
 
 test('a failed payment records no referral; the referral is marked simulated', async () => {
   await register(chinmayToken);
-  const ambassador = await BrandAmbassadorCoupon.findOne({ couponCode: 'CHI0001' }).lean();
+  const ambassador = await BrandAmbassadorCoupon.findOne({ couponCode: 'GGF0001' }).lean();
   const failed = await EnrolledClient.create({
     userId: rahul._id,
     planId: plan._id,
@@ -522,7 +568,7 @@ test('a failed payment records no referral; the referral is marked simulated', a
   assert.equal(await recordReferralForEnrollment(failed._id), null);
   assert.equal(await BrandAmbassadorReferral.countDocuments({}), 0);
 
-  await buyWithCode(rahulToken, 'CHI0001', 'pay_rahul_sim');
+  await buyWithCode(rahulToken, 'GGF0001', 'pay_rahul_sim');
   const referral = await BrandAmbassadorReferral.findOne({}).lean();
   assert.equal(referral.paymentVerification, 'simulated');
   const detail = await req('GET', `/api/admin/ambassador-referrals/${referral._id}`, adminToken);
@@ -533,8 +579,8 @@ test('a failed payment records no referral; the referral is marked simulated', a
 test('a code deactivated before purchase is refused at purchase too, and nothing is recorded', async () => {
   await register(chinmayToken);
   const added = await req('POST', '/api/users/me/cart', rahulToken, { coachId: String(coach._id), planId: String(plan._id) });
-  await BrandAmbassadorCoupon.updateOne({ couponCode: 'CHI0001' }, { $set: { status: 'inactive' } });
-  const res = await req('POST', `/api/users/me/cart/${added.body.data.item.id}/purchase`, rahulToken, { couponCode: 'CHI0001', paymentReference: 'pay_x' });
+  await BrandAmbassadorCoupon.updateOne({ couponCode: 'GGF0001' }, { $set: { status: 'inactive' } });
+  const res = await req('POST', `/api/users/me/cart/${added.body.data.item.id}/purchase`, rahulToken, { couponCode: 'GGF0001', paymentReference: 'pay_x' });
   assert.equal(res.status, 400);
   assert.equal(await EnrolledClient.countDocuments({ userId: rahul._id }), 0);
   assert.equal(await BrandAmbassadorReferral.countDocuments({}), 0);
@@ -556,7 +602,7 @@ test('admin sets a commission rate in range; it applies to future referrals only
   await register(chinmayToken);
   const amb = await BrandAmbassadorCoupon.findOne({}).lean();
   const path = `/api/admin/ambassadors/${amb._id}/commission`;
-  await buyWithCode(rahulToken, 'CHI0001', 'pay_before');
+  await buyWithCode(rahulToken, 'GGF0001', 'pay_before');
 
   for (const bad of [4, 11, 7.5, '8']) {
     assert.equal((await req('PATCH', path, adminToken, { commissionPercent: bad })).status, 400, String(bad));
@@ -568,7 +614,7 @@ test('admin sets a commission rate in range; it applies to future referrals only
   assert.equal((await me(chinmayToken)).body.data.ambassador.commissionPercent, 8);
 
   const neha = await seedUser('919000000009', 'Neha Sharma');
-  await buyWithCode(tokenFor(neha), 'CHI0001', 'pay_after');
+  await buyWithCode(tokenFor(neha), 'GGF0001', 'pay_after');
   const [first, second] = await BrandAmbassadorReferral.find({}).sort({ createdAt: 1 }).lean();
   assert.equal(first.commissionPercent, 5);
   assert.equal(first.grossCommission, 475);
@@ -590,7 +636,7 @@ test('recording a payout: finished months only, exact amount, settles the ledger
     await register(chinmayToken);
     const amb = await BrandAmbassadorCoupon.findOne({}).lean();
     await seedEarlierReferrals(amb, 3); // October: 3 × ₹427 net = ₹1,281
-    await buyWithCode(rahulToken, 'CHI0001', 'pay_nov'); // November, still open
+    await buyWithCode(rahulToken, 'GGF0001', 'pay_nov'); // November, still open
     const path = `/api/admin/ambassadors/${amb._id}/payouts`;
     const body = { period: '2026-10', amount: 1281, paidAt: '2026-11-07', reference: 'UTR123456', status: 'Paid' };
 

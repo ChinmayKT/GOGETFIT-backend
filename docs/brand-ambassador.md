@@ -1,6 +1,6 @@
 # Brand Ambassador programme
 
-A member joins, gets a code like `CHI0001`, and friends who buy a plan with it
+A member joins, gets a code like `GGF0001`, and friends who buy a plan with it
 get a discount. Each verified purchase counts as a referral and earns the
 ambassador commission. The ambassador sees **only the count**. Admins see the
 full transactions.
@@ -35,14 +35,20 @@ created by Mongoose `autoIndex` (or `Model.syncIndexes()`).
 
 ## Coupon generation
 
-The prefix is the first three letters of the name, upper-cased with accents
-folded:
-- "Chinmay K T" gives `CHI`.
-- A name with fewer than three letters is padded with X ("Al" gives `ALX`).
-- A name with no letters gives `GGF`.
+Every new code is `GGF` plus a global four-digit sequence: `GGF0001`,
+`GGF0002`, `GGF0003`, ... (past `GGF9999` it grows a digit: `GGF10000`). The
+number comes from one atomic `$inc` on the `GGF` document in
+`brand_ambassador_sequences`, so concurrent registrations never share one. A
+number may be skipped (a registration that failed after allocation), never
+repeated; the unique `couponCode` index is the final guard.
 
-The suffix comes from an atomic `$inc` on the prefix's sequence and is padded
-to 4 digits.
+Codes made before this format (the first three letters of the name plus four
+digits, e.g. `CHI0001`) are kept unchanged and keep working for checkout,
+referrals, commission and reporting. The old no-letters fallback already used
+`GGF`, so the new codes continue that same counter.
+
+Codes are stored and shown upper-case; checkout matches them
+case-insensitively (input is trimmed and upper-cased).
 
 A code already used by another ambassador or by an admin coupon is skipped.
 Admin coupon create and update also refuse a code an ambassador holds.

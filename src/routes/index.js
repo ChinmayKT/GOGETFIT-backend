@@ -7,6 +7,7 @@ import coachRoutes from './coach.routes.js';
 import coachWorkspaceRoutes from './coach-workspace.routes.js';
 import faqRoutes from './faq.routes.js';
 import introVideoRoutes from './intro-video.routes.js';
+import talksRoutes from './talks.routes.js';
 import feedRoutes from './feed.routes.js';
 import foodRoutes from './food.routes.js';
 import freeDietPlanRoutes from './free-diet-plan.routes.js';
@@ -27,6 +28,8 @@ router.use('/plans', planRoutes);
 router.use('/faqs', faqRoutes);
 // Introductory Videos (Journey Module 3), read-only. Managing them stays under /admin.
 router.use('/intro-videos', introVideoRoutes);
+
+router.use('/talks', talksRoutes);
 // Member-facing coach discovery (read-only). Coach management stays under /admin.
 router.use('/coaches', coachRoutes);
 // The signed-in coach's own workspace (coach role only).

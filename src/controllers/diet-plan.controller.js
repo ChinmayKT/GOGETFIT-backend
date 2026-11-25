@@ -3,6 +3,7 @@ import {
   createDietPlanForCoach,
   getDietPlanForDay,
   getDietPlanForDayForCoach,
+  getDietPlanByIdForCoach,
   getDietPlanHistoryForCoach,
   getDietPlanHistoryForUser,
   listDietPlansForAdmin,
@@ -96,6 +97,15 @@ export const getCoachClientDietPlans = handle(async (req, res) => {
 export const getCoachClientDietPlanForDay = handle(async (req, res) => {
   const date = typeof req.query.date === 'string' && req.query.date !== '' ? req.query.date : undefined;
   const result = await getDietPlanForDayForCoach(req.user._id, req.params.enrollmentId, { date });
+  res.status(200).json({ success: true, data: result });
+});
+
+/**
+ * GET /api/coach/enrollments/:enrollmentId/diet-plans/:dietPlanId - one of that
+ * client's plans by id (read only), e.g. one a newer plan replaced.
+ */
+export const getCoachClientDietPlanById = handle(async (req, res) => {
+  const result = await getDietPlanByIdForCoach(req.user._id, req.params.enrollmentId, req.params.dietPlanId);
   res.status(200).json({ success: true, data: result });
 });
 

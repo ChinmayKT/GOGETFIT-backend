@@ -302,13 +302,13 @@ const mergeContiguous = (spans) => {
  *              covered the same day, the newer one was shown (DietPlan.findForDay)
  *   openDate - the last shown day: open it with GET /users/me/diet-plan?date=
  *
- * Lightweight: no meals and no foods are read. The member is always the
- * authenticated user.
+ * Lightweight: no Food documents are read - only each plan's own frozen meal
+ * snapshots, for `totals`. The member is always the authenticated user.
  */
 export const getDietPlanHistoryForUser = async (userId, { today = businessDayOf(new Date()), includeCurrent = false } = {}) => {
   const user = await findUser(userId);
   const [all, unstartedIds] = await Promise.all([
-    DietPlan.find({ clientId: user._id, status: 'active' }).select('-meals').populate(POPULATE[0]).lean(),
+    DietPlan.find({ clientId: user._id, status: 'active' }).populate(POPULATE[0]).lean(),
     unstartedEnrollmentIds(user._id),
   ]);
   // Plans of enrollments the coach has not started were never the member's
@@ -361,6 +361,14 @@ export const getDietPlanHistoryForUser = async (userId, { today = businessDayOf(
       goal: latest.goal ?? null,
       coach: coach ? { id: String(coach._id), name: isObject(coach.userId) ? coach.userId.profile?.name ?? null : null, level: coach.profile?.level ?? null } : null,
       targets: targetsView(latest.targets),
+      /**
+       * What the plan's meals actually add up to - the same sum, from the same
+       * frozen food snapshots, as the plan view's `totals`. Targets are what
+       * the plan aimed for; this is what was added.
+       */
+      totals: roundAll(sumRaw((latest.meals ?? []).flatMap((m) => m.foods).map(rawContribution))),
+      /** The newest stored run of this plan: open it by id when no day shows it. */
+      dietPlanId: String(latest._id),
       assignedAt: iso(latest.assignedAt),
       ranges: group.map((r) => ({ dietPlanId: r.id, ...span(r.fromDate, r.toDate) })),
       coverage,
@@ -409,6 +417,21 @@ export const clientOfCoachEnrollment = async (coachUserId, enrollmentId) => {
  */
 export const getDietPlanHistoryForCoach = async (coachUserId, enrollmentId, options = {}) =>
   getDietPlanHistoryForUser(await clientOfCoachEnrollment(coachUserId, enrollmentId), { ...options, includeCurrent: true });
+
+/**
+ * Coach read: one of the client's diet plans by id, whatever day it covered -
+ * so a plan a newer one replaced on every day can still be inspected. Read
+ * only; the plan is returned exactly as stored, never changed or reactivated.
+ */
+export const getDietPlanByIdForCoach = async (coachUserId, enrollmentId, dietPlanId, { today = businessDayOf(new Date()) } = {}) => {
+  const clientId = await clientOfCoachEnrollment(coachUserId, enrollmentId);
+  const doc = mongoose.isValidObjectId(dietPlanId)
+    ? await DietPlan.findOne({ _id: dietPlanId, clientId }).populate(POPULATE).lean()
+    : null;
+  if (!doc) throw notFound(ERROR_CODES.DIET_PLAN_NOT_FOUND, 'Diet plan not found');
+  const { views, missing } = await toViews([doc], today, clientId);
+  return { dietPlan: views[0], missingFoodIds: missing };
+};
 
 /** Coach read: the plan the client sees on a day - the member's own day lookup. */
 export const getDietPlanForDayForCoach = async (coachUserId, enrollmentId, options = {}) =>
